@@ -27,8 +27,7 @@ double get_mass(int pid) {
         {2212, 0.938272},  // proton
         {2112, 0.939565},  // neutron
         {111, 0.134977},   // pi0
-        {130, 0.497611},    // Klong
-        // {321, 0.493677}    // charged K
+        {130, 0.497611}    // Klong
     };
     // Return the mass if found, 0 otherwise
     return masses.count(pid) ? masses[pid] : 0;
@@ -40,6 +39,14 @@ void generate_event(WriterAscii& writer, const std::vector<int>& pid_list,
     // Create a random number generator
     std::random_device rd;
     std::mt19937 gen(rd());
+
+    // Generate random eta
+    std::uniform_real_distribution<> eta_dist(eta_range[0], eta_range[1]);
+    float eta = eta_dist(gen);
+
+    // Generate random phi
+    std::uniform_real_distribution<> phi_dist(-M_PI, M_PI);
+    float phi = phi_dist(gen);
 
     // Generate random number of particles
     std::uniform_int_distribution<> npart_dist(npart_range[0], npart_range[1]);
@@ -65,14 +72,14 @@ void generate_event(WriterAscii& writer, const std::vector<int>& pid_list,
         std::uniform_int_distribution<> pid_dist(0, pid_list.size() - 1);
         int pid = pid_list[pid_dist(gen)];
 
-
-        // Generate random eta
-        std::uniform_real_distribution<> eta_dist(eta_range[0], eta_range[1]);
-        float etap = eta_dist(gen);
-
-        // Generate random phi
-        std::uniform_real_distribution<> phi_dist(-M_PI, M_PI);
-        float phip = phi_dist(gen);
+        // Generate random direction within drmax
+        float etap, phip;
+        do {
+            std::uniform_real_distribution<> deta_dist(-drmax, drmax);
+            std::uniform_real_distribution<> dphi_dist(-drmax, drmax);
+            etap = eta + deta_dist(gen);
+            phip = phi + dphi_dist(gen);
+        } while (sqrt(pow(etap - eta, 2) + pow(phip - phi, 2)) > drmax);
 
         // Create the particle
 
@@ -85,8 +92,6 @@ void generate_event(WriterAscii& writer, const std::vector<int>& pid_list,
         // Generate random momentum
         std::uniform_real_distribution<> log_mom_dist(log(mom_range[0]), log(mom_range[1]));
         float momp = exp(log_mom_dist(gen));
-        // std::uniform_real_distribution<> log_mom_dist(mom_range[0], mom_range[1]);
-        // float momp = log_mom_dist(gen);
 
          //std::cout<<"  "<<i<<","<<pid<<","<<momp<<","<<etap<<","<<phip<<"\n";
         // Compute px, py, pz, E
@@ -208,7 +213,7 @@ int main(int argc, char** argv) {
     std::cout << "\n";
 
     // Open the output file
-    WriterAscii writer("out.hepmc");
+    WriterAscii writer("events.hepmc");
 
     // Generate and write n events
     for (int i = 0; i < nevents; i++) {

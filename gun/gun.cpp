@@ -213,7 +213,7 @@ int main(int argc, char** argv) {
     std::cout << "\n";
 
     // Open the output file
-    WriterAscii writer("events.hepmc");
+    WriterAscii writer("out.hepmc");
 
     // Generate and write n events
     for (int i = 0; i < nevents; i++) {
