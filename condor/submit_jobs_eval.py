@@ -19,13 +19,24 @@ def absoluteFilePaths(directory):
 # _____________________________________________________________________________________________________________
 def main():
     parser = argparse.ArgumentParser()
+
     parser.add_argument(
         "--outdir",
         help="output directory ",
         default="/eos/experiment/fcc/ee/simulation/ClicDet/test/",
     )
 
+    parser.add_argument(
+        "--config",
+        help="gun config file (has to be in gun/ directory) ",
+        default="config.gun",
+    )
+
     parser.add_argument("--njobs", help="max number of jobs", default=2)
+
+    parser.add_argument(
+        "--nev", help="max number of events (-1 runs on all events)", default=-1
+    )
 
     parser.add_argument(
         "--queue",
@@ -45,8 +56,9 @@ def main():
     args = parser.parse_args()
 
     outdir = os.path.abspath(args.outdir)
-
+    config = args.config
     njobs = int(args.njobs)
+    nev = args.nev
     queue = args.queue
     homedir = os.path.abspath(os.getcwd()) + "/../"
 
@@ -57,7 +69,7 @@ def main():
     for name in glob.glob("{}/*.root".format(outdir)):
         list_of_outfiles.append(name)
 
-    script = "run_sequence_global_dr.sh"
+    script = "run_sequence_CLD_eval.sh"
 
     jobCount = 0
 
@@ -79,7 +91,7 @@ log                   = std/condor.$(ClusterId).log
     for job in range(njobs):
 
         seed = str(job + 1)
-        basename = "reco_Zcard" + seed + ".root"
+        basename = "pf_tree_" + seed + ".root"
         outputFile = outdir + "/" + basename
 
         # print outdir, basename, outputFile
@@ -87,7 +99,7 @@ log                   = std/condor.$(ClusterId).log
             print("{} : missing output file ".format(outputFile))
             jobCount += 1
 
-            argts = "{}".format(seed)
+            argts = "{} {} {} {} {}".format(homedir, config, nev, seed, outdir)
 
             cmdfile += 'arguments="{}"\n'.format(argts)
             cmdfile += "queue\n"
