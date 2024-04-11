@@ -29,21 +29,19 @@ event_number, n_hit, n_part, dic, t = initialize(t)
 
 
 event_number[0] = 0
+event_numbers = 0
 i = 0
 for event in reader.get("events"):
+    # if event_numbers == 8:
     clear_dic(dic)
     n_part[0] = 0
-    if debug:
-        print("")
-        print(" ----- new event: {} ----------".format(event_number[0]))
-        print("")
-
-    n_part, dic = read_mc_collection(event, dic, n_part)
+    n_part, dic = read_mc_collection(event, dic, n_part, debug)
     n_hit, dic = store_hit_col_CDC(event, n_hit, dic, metadata)
     n_hit, dic = store_hit_col_VTX(event, n_hit, dic)
 
     event_number[0] += 1
     t.Fill()
+    # event_numbers = event_numbers + 1
 
 t.SetDirectory(out_root)
 t.Write()

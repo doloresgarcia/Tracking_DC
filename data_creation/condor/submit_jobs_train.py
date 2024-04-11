@@ -57,7 +57,7 @@ def main():
     for name in glob.glob("{}/*.root".format(outdir)):
         list_of_outfiles.append(name)
 
-    script = "run_sequence_global_dr.sh"
+    script = "run_sequence_global_1.sh"
 
     jobCount = 0
 
@@ -79,7 +79,7 @@ log                   = std/condor.$(ClusterId).log
     for job in range(njobs):
 
         seed = str(job + 1)
-        basename = "reco_Zcard" + seed + ".root"
+        basename = "reco_gun_" + seed + ".root"
         outputFile = outdir + "/" + basename
 
         # print outdir, basename, outputFile

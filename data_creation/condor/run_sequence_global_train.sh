@@ -12,29 +12,29 @@
 
 OUTDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia/
 PFDIR=/afs/cern.ch/work/m/mgarciam/private/Tracking_wcoc/
-NEV=10
+NEV=100
 
 NUM=${1} #random seed
-SAMPLE="gun" #main card
+SAMPLE="Zcard" #main card
 GUNCARD="config.gun"
 
 
-WORKDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia/scratch/${SAMPLE}/${NUM}/
+WORKDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia/scratch/${SAMPLE}_fakeCalo/${NUM}/
 echo $WORKDIR
-FULLOUTDIR=${OUTDIR}/${SAMPLE}
-PATH_TO_K4GEO="/afs/cern.ch/work/m/mgarciam/private/k4geo"
+FULLOUTDIR=${OUTDIR}/${SAMPLE}_fakeCalo
+PATH_TO_K4GEO="/afs/cern.ch/work/m/mgarciam/private/k4geo_versions/k4geo"
 K4RECTRACKER_dir="/afs/cern.ch/work/m/mgarciam/private/k4RecTracker"
 mkdir -p $FULLOUTDIR
-if [[ "${SAMPLE}" == "Zcard" ]]
-then 
-      cp $PFDIR/Pythia_generation/${SAMPLE}.cmd card.cmd
-      echo "Random:seed=${NUM}" >> card.cmd
-      cat card.cmd
-      cp $PFDIR/Pythia_generation/pythia.py ./
-fi
+
 mkdir $WORKDIR
 cd $WORKDIR
-
+if [[ "${SAMPLE}" == "Zcard" ]]
+      then 
+      cp $PFDIR/Pythia_generation/${SAMPLE}.cmd card.cmd
+      echo "Random:seed=${NUM}" >> card.cmd
+      # cat card.cmd
+      cp $PFDIR/Pythia_generation/pythia.py ./
+fi
 cp $PFDIR/data_processing/process_tree_global.py ./
 cp $PFDIR/data_processing/tools_tree_global.py ./
 cp $K4RECTRACKER_dir/runIDEAtrackerDigitizer.py ./
@@ -59,8 +59,9 @@ then
 
 fi 
 
-source /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
-## source /cvmfs/sw-nightlies.hsf.org/key4hep/releases/2024-02-26/x86_64-almalinux9-gcc11.3.1-opt/key4hep-stack/2024-02-26-uj7zqp/setup.sh
+source  /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
+# #source /cvmfs/sw.hsf.org/key4hep/setup.sh
+# source /cvmfs/sw-nightlies.hsf.org/key4hep/releases/2024-02-26/x86_64-almalinux9-gcc11.3.1-opt/key4hep-stack/2024-02-26-uj7zqp/setup.sh
 if [[ "${SAMPLE}" == "Zcard" ]]
 then
       k4run $PFDIR/Pythia_generation/pythia.py -n $NEV --Dumper.Filename out.hepmc --Pythia8.PythiaInterface.pythiacard card.cmd
@@ -71,11 +72,12 @@ ddsim --compactFile $PATH_TO_K4GEO/FCCee/IDEA/compact/IDEA_o1_v02/IDEA_o1_v02.xm
       --inputFiles out.hepmc \
       --numberOfEvents $NEV \
       --random.seed $NUM
+      # --action.tracker Geant4TrackerAction
 
 
 cd $K4RECTRACKER_dir
 k4_local_repo
-# export K4RECTRACKER=$PWD/install/share/; PATH=$PWD/install/bin/:$PATH; CMAKE_PREFIX_PATH=$PWD/install/:$CMAKE_PREFIX_PATH; LD_LIBRARY_PATH=$PWD/install/lib:$PWD/install/lib64:$LD_LIBRARY_PATH; export PYTHONPATH=$PWD/install/python:$PYTHONPATH
+# # # # export K4RECTRACKER=$PWD/install/share/; PATH=$PWD/install/bin/:$PATH; CMAKE_PREFIX_PATH=$PWD/install/:$CMAKE_PREFIX_PATH; LD_LIBRARY_PATH=$PWD/install/lib:$PWD/install/lib64:$LD_LIBRARY_PATH; export PYTHONPATH=$PWD/install/python:$PYTHONPATH
 cd $WORKDIR
 k4run runIDEAtrackerDigitizer.py
 

@@ -43,18 +43,23 @@ def get_genparticle_parents(i, mcparts):
 def find_mother_particle(mc_particle):
     parent_p = mc_particle.getObjectID().index
     counter = 0
-    while len(np.reshape(np.array(parent_p), -1)) < 1.5:
+    decayed_in_tracker = 1
+    while decayed_in_tracker == 1:
         if type(parent_p) == list:
             parent_p = parent_p[0]
         parents = mc_particle.getParents()
         parent_p_r = []
         for parent in parents:
             parent_p_r.append(parent.getObjectID().index)
+            decayed_in_tracker = parent.isDecayedInTracker() * 1
         pp_old = parent_p
         counter = counter + 1
         parent_p = parent_p_r
-    print("found parent", parent_p, pp_old)
-    return pp_old
+        if len(np.reshape(np.array(parent_p), -1)) > 1.5:
+            parent_p = pp_old
+            decayed_in_tracker = 0
+        # print("found parent", parent_p, pp_old)
+    return parent_p
 
 
 def initialize(t):
@@ -88,6 +93,7 @@ def initialize(t):
     part_phi = ROOT.std.vector("float")()
     part_m = ROOT.std.vector("float")()
     part_id = ROOT.std.vector("float")()
+    part_parent = ROOT.std.vector("float")()
     part_pid = ROOT.std.vector("float")()
     hit_cellID = ROOT.std.vector("int")()
     superLayer = ROOT.std.vector("float")()
@@ -134,7 +140,7 @@ def initialize(t):
     t.Branch("layer", layer)
     t.Branch("phi", phi)
     t.Branch("stereo", stereo)
-    # t.Branch("cov4", cov4)
+    t.Branch("part_parent", part_parent)
     # t.Branch("cov5", cov5)
 
     dic = {
@@ -167,12 +173,13 @@ def initialize(t):
         "layer": layer,
         "phi": phi,
         "stereo": stereo,
+        "part_parent": part_parent,
     }
 
     return (event_number, n_hit, n_part, dic, t)
 
 
-def read_mc_collection(event, dic, n_part):
+def read_mc_collection(event, dic, n_part, debug):
     mc_particles = event.get("MCParticles")
     # jjz = 0
     for jj, mc_particle in enumerate(mc_particles):
@@ -203,28 +210,30 @@ def read_mc_collection(event, dic, n_part):
             dic["part_m"].push_back(m)
             dic["part_pid"].push_back(pdg)
             dic["part_id"].push_back(genlink0_particle)
-
-        # print(
-        #     "all genparts: N: {}, PID: {}, Q: {}, P: {:.2e}, Theta: {:.2e}, Phi: {:.2e}, M: {:.2e}, status: {}, parents: {}, daughters: {}, decayed_traacker: {}".format(
-        #         jj,
-        #         mc_particle.getPDG(),
-        #         mc_particle.getCharge(),
-        #         p,
-        #         theta,
-        #         phi,
-        #         mc_particle.getMass(),
-        #         mc_particle.getGeneratorStatus(),
-        #         get_genparticle_parents(
-        #             genlink0_particle,
-        #             mc_particles,
-        #         ),
-        #         get_genparticle_daughters(
-        #             genlink0_particle,
-        #             mc_particles,
-        #         ),
-        #         mc_particle.isDecayedInTracker() * 1,
-        #     )
-        # )
+        parents = mc_particle.getParents()
+        dic["part_parent"].push_back(parents[0].getObjectID().index)
+        if debug:
+            print(
+                "all genparts: N: {}, PID: {}, Q: {}, P: {:.2e}, Theta: {:.2e}, Phi: {:.2e}, M: {:.2e}, status: {}, parents: {}, daughters: {}, decayed_traacker: {}".format(
+                    jj,
+                    mc_particle.getPDG(),
+                    mc_particle.getCharge(),
+                    p,
+                    theta,
+                    phi,
+                    mc_particle.getMass(),
+                    mc_particle.getGeneratorStatus(),
+                    get_genparticle_parents(
+                        genlink0_particle,
+                        mc_particles,
+                    ),
+                    get_genparticle_daughters(
+                        genlink0_particle,
+                        mc_particles,
+                    ),
+                    mc_particle.isDecayedInTracker() * 1,
+                )
+            )
 
         n_part[0] += 1
 
@@ -244,7 +253,7 @@ def store_hit_col_CDC(event, n_hit, dic, metadata):
     dc_hits = event.get("CDCHHits")
     n_hit[0] = 0
     ii = 0
-
+    number_of_hits_p_seatched = 0
     for num_hit, dc_hit in enumerate(dc_hits):
         # if i > 2:
         #     break
@@ -308,12 +317,16 @@ def store_hit_col_CDC(event, n_hit, dic, metadata):
         object_id = mcParticle.getObjectID()
         # # print(object_id.index)
         genlink0 = object_id.index
+        # if genlink0 == 125:
+        # #     print(x, y, z, cellID)
+        #     number_of_hits_p_seatched = number_of_hits_p_seatched + 1
         # print(pdg_particle, genlink0, object_id.index)
         # mcParticle_mother_index = find_mother_particle(mcParticle)
         dic["hit_genlink0"].push_back(genlink0)
         # hit_pdg_particle.push_back(pdg_particle)
         ii += 1
         n_hit[0] += 1
+    # print("number_of_hits_p_seatched", number_of_hits_p_seatched)
     return n_hit, dic
 
 
@@ -344,7 +357,6 @@ def store_hit_col_VTX(event, n_hit, dic):
             py = momentum.y
             pz = momentum.z
             htype = 1
-
             dic["hit_cellID"].push_back(cellID)
             dic["hit_EDep"].push_back(EDep)
             dic["hit_time"].push_back(time)
@@ -380,6 +392,16 @@ def store_hit_col_VTX(event, n_hit, dic):
             genlink0 = object_id.index
             # print("VTX")
             # mcParticle_mother_index = find_mother_particle(mcParticle)
+            # if genlink0 == 69:
+            #     print("genlink0", genlink0)
+            #     print("position1", x, y, z)
+            #     print(
+            #         "position 2",
+            #         dc_hit.getPosition().x,
+            #         dc_hit.getPosition().y,
+            #         dc_hit.getPosition().z,
+            #     )
+            #     print("1")
             dic["hit_genlink0"].push_back(genlink0)
             ii += 1
             n_hit[0] += 1
