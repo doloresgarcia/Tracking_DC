@@ -8,8 +8,8 @@ class GraphTransformerNetWrapper(torch.nn.Module):
         super().__init__()
         self.mod = ExampleWrapper(args, **kwargs)
 
-    def forward(self, g, step_count):
-        return self.mod(g, step_count)
+    def forward(self, g):
+        return self.mod(g)
 
 
 def get_model(data_config, args, dev, **kwargs):
