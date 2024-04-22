@@ -40,6 +40,12 @@ from lightning.pytorch.callbacks import (
 from lightning.pytorch.profilers import AdvancedProfiler
 from src.utils.train_utils import get_samples_steps_per_epoch, model_setup, get_gpu_dev
 
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["TORCH_LOGS"] = "onnx_diagnostics"
+os.environ["TORCHLIB_EXPERIMENTAL_PREFER_TRACING"] = "1"
+
 
 def main():
     args = parser.parse_args()
@@ -62,16 +68,38 @@ def main():
         entity=args.wandb_entity,
         name=args.wandb_displayname,
     )
-
+    print("HEEERE")
     if args.export_onnx:
         print("exporting to onnx")
-        filepath = args.model_prefix + "model.onnx"
-        input_sample = torch.randn((1, 7))
-        onnx_program = torch.onnx.dynamo_export(model, input_sample)
+        filepath = args.model_prefix + "model_multivector_10.onnx"
+        # args1 = (torch.randn((10, 3)), torch.randn((10, 1)), torch.randn((10, 3)))
+        torch._dynamo.config.verbose = True
+        # if args.load_model_weights is not None:
+        #     from src.models.Gatr_v import ExampleWrapper
+
+        #     model = ExampleWrapper.load_from_checkpoint(
+        #         args.load_model_weights, args=args, dev=0
+        #     )
+        model.eval()
+        args1 = torch.randn((10, 1, 16))
+        export_options = torch.onnx.ExportOptions(dynamic_shapes=True)
+        onnx_program = torch.onnx.dynamo_export(
+            model,
+            args1,
+            export_options=export_options,
+            # input_names=["input"],
+            # output_names=["output"],
+            # dynamic_axes={
+            #     "input": [0],
+            #     "output": [0],
+            # },
+        )
         onnx_program.save(filepath)
+        # input_sample = torch.randn((10, 7))
         # model.to_onnx(filepath, input_sample, export_params=True, verbose=True)
 
     elif training_mode:
+        print("USING TRAINING MODE")
         if args.load_model_weights is not None:
             from src.models.Gatr import ExampleWrapper
 
@@ -95,15 +123,15 @@ def main():
         ]
         trainer = L.Trainer(
             callbacks=callbacks,
-            accelerator="gpu",
-            devices=[0, 1, 2, 3],
+            # accelerator="cpu",
+            # devices=[0, 1, 2, 3],
             default_root_dir=args.model_prefix,
             logger=wandb_logger,
-            max_epochs=1,
-            strategy="ddp",
+            max_epochs=5,
+            # strategy="ddp",
             # limit_train_batches=20,
-            limit_train_batches=20,
-            limit_val_batches=20,
+            limit_train_batches=5,
+            limit_val_batches=5,
         )
         args.local_rank = trainer.global_rank
         train_loader, val_loader, data_config, train_input_names = train_load(args)
@@ -115,11 +143,11 @@ def main():
             # ckpt_path=args.load_model_weights,
         )
 
-    if args.data_test:
+    elif args.data_test:
         trainer = L.Trainer(
             callbacks=[TQDMProgressBar(refresh_rate=1)],
-            accelerator="gpu",
-            devices=[0],
+            # accelerator="cpu",
+            # devices=[0],
             default_root_dir=args.model_prefix,
             logger=wandb_logger,
             limit_val_batches=5,
@@ -128,7 +156,7 @@ def main():
             test_loader = get_test_loader()
             trainer.validate(
                 model=model,
-                ckpt_path=args.load_model_weights,
+                # ckpt_path=args.load_model_weights,
                 dataloaders=test_loader,
             )
 
