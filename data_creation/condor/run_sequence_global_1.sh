@@ -12,18 +12,18 @@
 
 OUTDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia_evaluation/
 PFDIR=/afs/cern.ch/work/m/mgarciam/private/Tracking_wcoc/data_creation/
-NEV=100
+NEV=2
 
 NUM=${1} #random seed
 SAMPLE="Zcard" #main card
 GUNCARD="config.gun"
 
 
-WORKDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia_evaluation/scratch/${SAMPLE}_fakeCalo/${NUM}/
+WORKDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia_evaluation/scratch/${SAMPLE}_fakeCalo_test/${NUM}/
 echo $WORKDIR
 FULLOUTDIR=${OUTDIR}/${SAMPLE}_fakeCalo
 PATH_TO_K4GEO="/afs/cern.ch/work/m/mgarciam/private/k4geo_versions/k4geo"
-K4RECTRACKER_dir="/afs/cern.ch/work/m/mgarciam/private/k4RecTracker"
+K4RECTRACKER_dir="/afs/cern.ch/work/m/mgarciam/private/k4RecTracker_dev_0"
 mkdir -p $FULLOUTDIR
 
 mkdir $WORKDIR
@@ -61,7 +61,7 @@ fi
 
 #source  /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
 # source /cvmfs/sw.hsf.org/key4hep/releases/2024-03-10/x86_64-almalinux9-gcc11.3.1-opt/key4hep-stack/2024-03-10-gidfme/setup.sh
-source /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh -r 2024-02-29
+source /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh -r 2024-03-07
 # # source /cvmfs/sw-nightlies.hsf.org/key4hep/releases/2024-02-26/x86_64-almalinux9-gcc11.3.1-opt/key4hep-stack/2024-02-26-uj7zqp/setup.sh
 if [[ "${SAMPLE}" == "Zcard" ]]
 then
@@ -84,4 +84,4 @@ k4run runIDEAtrackerDigitizer.py
 
 python process_tree_global.py output_IDEA_DIGI.root reco_${SAMPLE}_${NUM}.root 
 
-cp reco_${SAMPLE}_${NUM}.root $FULLOUTDIR/
+# cp reco_${SAMPLE}_${NUM}.root $FULLOUTDIR/
