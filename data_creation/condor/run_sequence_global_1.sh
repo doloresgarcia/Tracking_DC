@@ -42,10 +42,10 @@ cp $K4RECTRACKER_dir/runIDEAtrackerDigitizer.py ./
 if [[ "${SAMPLE}" == "gun" ]] 
 then 
       cp -r $PFDIR/gun/gun_random_angle.cpp .
-      cp -r $PFDIR/gun/compile_gun_RA.x .
+      cp -r $PFDIR/gun/CMakeLists.txt .
       cp -r $PFDIR/gun/${GUNCARD} .
 
-      source compile_gun_RA.x
+      
       echo 'nevents '${NEV} >> ${GUNCARD}
       echo "  "
       echo " ================================================================================ "
@@ -55,14 +55,18 @@ then
       echo " ===============================================================================  "
       echo "  "
 
-      ./gun ${GUNCARD}
+      mkdir build install
+      cd build
+      cmake .. -DCMAKE_INSTALL_PREFIX=../install
+      make install -j 8
+      cd ..
+      ./build/gun ${GUNCARD} 
 
 fi 
 
-#source  /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
-# source /cvmfs/sw.hsf.org/key4hep/releases/2024-03-10/x86_64-almalinux9-gcc11.3.1-opt/key4hep-stack/2024-03-10-gidfme/setup.sh
-source /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh -r 2024-03-07
-# # source /cvmfs/sw-nightlies.hsf.org/key4hep/releases/2024-02-26/x86_64-almalinux9-gcc11.3.1-opt/key4hep-stack/2024-02-26-uj7zqp/setup.sh
+
+source /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh 
+
 if [[ "${SAMPLE}" == "Zcard" ]]
 then
       k4run $PFDIR/Pythia_generation/pythia.py -n $NEV --Dumper.Filename out.hepmc --Pythia8.PythiaInterface.pythiacard card.cmd
