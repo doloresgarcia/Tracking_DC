@@ -1,0 +1,13 @@
+# here goes your shell script
+    executable    = run_sequence_global_gun.sh
+
+    # here you specify where to put .log, .out and .err files
+    output                = std/condor.$(ClusterId).$(ProcId).out
+    error                 = std/condor.$(ClusterId).$(ProcId).err
+    log                   = std/condor.$(ClusterId).log
+    
+
+    +AccountingGroup = "group_u_CMST3.all"
+    +JobFlavour    = "espresso"
+    arguments="1 config.gun"
+queue
