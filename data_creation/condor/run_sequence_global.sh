@@ -50,7 +50,7 @@ then
       cp -r $PFDIR/gun/gun_random_angle.cpp .
       cp -r $PFDIR/gun/CMakeLists.txt .
       cp -r $PFDIR/gun/gun.cpp .
-      cp -r $PFDIR/gun/${CONFIG} .
+      cp -r $PFDIR/gun/configurations/${CONFIG} .
 
       echo "" >> $CONFIG
       echo "nevents ${NEV}" >> $CONFIG
