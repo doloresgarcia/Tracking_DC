@@ -10,43 +10,50 @@
 # env
 # df -h
 
-OUTDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia_evaluation/
-PFDIR=/afs/cern.ch/work/m/mgarciam/private/Tracking_wcoc/
-NEV=100
+OUTDIR=/afs/cern.ch/user/a/adevita/public/workDir/dataset
+PFDIR=/afs/cern.ch/user/a/adevita/public/workDir/Tracking_DC/data_creation/
+WORKDIR=/afs/cern.ch/user/a/adevita/public/workDir/temp/
 
-NUM=${1} #random seed
-SAMPLE="Zcard" #main card
-GUNCARD="config.gun"
+NUM=${1}     # random seed
+SAMPLE=${2}  # sample
+CONFIG=${3}  # configuration file
+NEV=${4}     # number of events
 
+echo "Simulation has started"
+echo "Random:seed = ${NUM}"
+echo "Sample = ${SAMPLE}"
+echo "Workdir = ${WORKDIR}"
+echo "ConfigFile = ${CONFIG}"
 
-WORKDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia_evaluation/scratch/${SAMPLE}_fakeCalo/${NUM}/
-echo $WORKDIR
-FULLOUTDIR=${OUTDIR}/${SAMPLE}_fakeCalo
-PATH_TO_K4GEO="/afs/cern.ch/work/m/mgarciam/private/k4geo_versions/k4geo"
-K4RECTRACKER_dir="/afs/cern.ch/work/m/mgarciam/private/k4RecTracker"
-mkdir -p $FULLOUTDIR
+# FULLOUTDIR="${OUTDIR}/${SAMPLE}_fakeCalo/${NUM}"
+PATH_TO_K4GEO="/afs/cern.ch/user/a/adevita/public/workDir/k4geo/"
+K4RECTRACKER_dir="/afs/cern.ch/user/a/adevita/public/workDir/k4RecTracker/"
+SOURCEFILE_K4RECTRACKER="/afs/cern.ch/user/a/adevita/public/workDir/k4RecTracker/setup.sh"
 
-mkdir $WORKDIR
+# mkdir -p $FULLOUTDIR
+mkdir -p $WORKDIR
 cd $WORKDIR
-if [[ "${SAMPLE}" == "Zcard" ]]
-      then 
-      cp $PFDIR/Pythia_generation/${SAMPLE}.cmd card.cmd
-      echo "Random:seed=${NUM}" >> card.cmd
-      # cat card.cmd
-      cp $PFDIR/Pythia_generation/pythia.py ./
-fi
-cp $PFDIR/data_processing/process_tree_global.py ./
-cp $PFDIR/data_processing/tools_tree_global.py ./
-cp $K4RECTRACKER_dir/runIDEAtrackerDigitizer.py ./
+
+sleep 5
+echo ""
+echo "Sourcing k4RecTracker setup.sh"
+
+ORIG_PARAMS=("$@")
+set --
+source $SOURCEFILE_K4RECTRACKER
+set -- "${ORIG_PARAMS[@]}"
+
+echo ""
 
 if [[ "${SAMPLE}" == "gun" ]] 
 then 
       cp -r $PFDIR/gun/gun_random_angle.cpp .
-      cp -r $PFDIR/gun/compile_gun_RA.x .
-      cp -r $PFDIR/gun/${GUNCARD} .
+      cp -r $PFDIR/gun/CMakeLists.txt .
+      cp -r $PFDIR/gun/gun.cpp .
+      cp -r $PFDIR/gun/${CONFIG} .
 
-      source compile_gun_RA.x
-      echo 'nevents '${NEV} >> ${GUNCARD}
+      echo "" >> $CONFIG
+      echo "nevents ${NEV}" >> $CONFIG
       echo "  "
       echo " ================================================================================ "
       echo "  "
@@ -55,15 +62,22 @@ then
       echo " ===============================================================================  "
       echo "  "
 
-      ./gun ${GUNCARD}
+      mkdir -p build install
+      cd build
+      cmake .. -DCMAKE_INSTALL_PREFIX=../install
+      make install -j 8
+      cd ..
+      ./build/gun ${CONFIG} 
 
 fi 
 
-source  /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
-# #source /cvmfs/sw.hsf.org/key4hep/setup.sh
-# source /cvmfs/sw-nightlies.hsf.org/key4hep/releases/2024-02-26/x86_64-almalinux9-gcc11.3.1-opt/key4hep-stack/2024-02-26-uj7zqp/setup.sh
 if [[ "${SAMPLE}" == "Zcard" ]]
-then
+      then 
+      cp $PFDIR/Pythia_generation/${SAMPLE}.cmd card.cmd
+      echo "Random:seed=${NUM}" >> card.cmd
+      # cat card.cmd
+      cp $PFDIR/Pythia_generation/pythia.py ./
+
       k4run $PFDIR/Pythia_generation/pythia.py -n $NEV --Dumper.Filename out.hepmc --Pythia8.PythiaInterface.pythiacard card.cmd
 fi
 
@@ -72,15 +86,16 @@ ddsim --compactFile $PATH_TO_K4GEO/FCCee/IDEA/compact/IDEA_o1_v02/IDEA_o1_v02.xm
       --inputFiles out.hepmc \
       --numberOfEvents $NEV \
       --random.seed $NUM
-      # --action.tracker Geant4TrackerAction
 
+cp $PFDIR/data_processing/process_tree_global.py ./
+cp $PFDIR/data_processing/tools_tree_global.py ./
+cp $K4RECTRACKER_dir/runIDEAtrackerDigitizer.py ./
 
 cd $K4RECTRACKER_dir
-k4_local_repo
-# # # # export K4RECTRACKER=$PWD/install/share/; PATH=$PWD/install/bin/:$PATH; CMAKE_PREFIX_PATH=$PWD/install/:$CMAKE_PREFIX_PATH; LD_LIBRARY_PATH=$PWD/install/lib:$PWD/install/lib64:$LD_LIBRARY_PATH; export PYTHONPATH=$PWD/install/python:$PYTHONPATH
+
 cd $WORKDIR
 k4run runIDEAtrackerDigitizer.py
+mv output_IDEA_DIGI.root "${OUTDIR}/output_IDEA_DIGI_${SAMPLE}_${NUM}.root"
 
-python process_tree_global.py output_IDEA_DIGI.root reco_${SAMPLE}_${NUM}.root 
-
-cp reco_${SAMPLE}_${NUM}.root $FULLOUTDIR/
+# python process_tree_global.py output_IDEA_DIGI.root reco_${SAMPLE}_${NUM}.root 
+# cp reco_${SAMPLE}_${NUM}.root $FULLOUTDIR/
