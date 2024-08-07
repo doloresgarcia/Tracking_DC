@@ -298,6 +298,8 @@ def initialize(t):
 
     ## store here true information
     part_p = ROOT.std.vector("float")()
+    part_p_t = ROOT.std.vector("float")()
+    gen_status = ROOT.std.vector("float")()
     part_e = ROOT.std.vector("float")()
     part_theta = ROOT.std.vector("float")()
     part_R = ROOT.std.vector("float")()
@@ -321,6 +323,8 @@ def initialize(t):
     t.Branch("pandora_track_index", pandora_track_index)
 
     t.Branch("part_p", part_p)
+    t.Branch("part_p_t", part_p_t)
+    t.Branch("gen_status", gen_status)
     t.Branch("part_e", part_e)
     t.Branch("part_theta", part_theta)
     t.Branch("part_R", part_R)
@@ -340,6 +344,8 @@ def initialize(t):
         # "hit_pandora_cluster_energy": hit_pandora_cluster_energy,
         # "hit_pandora_pfo_energy": hit_pandora_pfo_energy,
         "part_p": part_p,
+        "part_p_t": part_p_t,
+        "gen_status": gen_status,
         "part_theta": part_theta,
         "part_R": part_R,
         "part_phi": part_phi,
@@ -494,16 +500,19 @@ def store_gen_particles(
         #    continue
         momentum = part.getMomentum()
         p = math.sqrt(momentum.x**2 + momentum.y**2 + momentum.z**2)
+        p_t = math.sqrt(momentum.x**2 + momentum.y**2)
         theta = math.acos(momentum.z / p)
         phi = math.atan2(momentum.y, momentum.x)
         R = math.sqrt(part.getVertex().x ** 2 + part.getVertex().y ** 2) * 1e-03
         # print(dic["part_p"])
         dic["part_R"].push_back(R)
         dic["part_p"].push_back(p)
+        dic["part_p_t"].push_back(p_t)
         dic["part_theta"].push_back(theta)
         dic["part_phi"].push_back(phi)
         dic["part_m"].push_back(part.getMass())
         dic["part_pid"].push_back(part.getPDG())
+        dic["gen_status"].push_back(part.getGeneratorStatus())
         dic["part_isDecayedInCalorimeter"].push_back(
             part.isDecayedInCalorimeter() * 1.0
         )
@@ -802,7 +811,7 @@ def store_track_hits(
     i_endcap_relation = "InnerTrackerEndcapHitsRelations"
     o_endcap_relation = "OuterTrackerEndcapHitsRelations"
 
-    conformal_tracking_trakcs = event.get("SiTracksCT")
+    conformal_tracking_trakcs = event.get("SiTracks_Refitted")
     calohit_collections_sim = [
         vxd_barrel_sim,
         vxd_endcap_sim,
