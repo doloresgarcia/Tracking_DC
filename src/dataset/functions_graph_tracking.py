@@ -35,7 +35,7 @@ def fix_splitted_tracks(hit_particle_link, y):
     particle_ids = y[:, 4]
     change_pairs = []
     for indx, i in enumerate(parents):
-        if torch.sum(particle_ids == i) > 0:
+        if (torch.sum(particle_ids == i) > 0) and y[indx, 5] > 0.01:
             change_pairs.append([parents[indx], particle_ids[indx]])
     # print("change_pairs", change_pairs)
     for pair in change_pairs:
@@ -45,13 +45,13 @@ def fix_splitted_tracks(hit_particle_link, y):
     return hit_particle_link
 
 
-def create_inputs_from_table(output, get_vtx):
+def create_inputs_from_table(output, get_vtx, cld=False):
     number_hits = np.int32(np.sum(output["pf_mask"][0]))
     # print("number_hits", number_hits)
     number_part = np.int32(np.sum(output["pf_mask"][1]))
     #! idx of particle does not start at 1
     hit_particle_link = torch.tensor(output["pf_vectoronly"][0, 0:number_hits])
-
+    # produced_by_secondary = torch.tensor(output["pf_by_secondary"][0, 0:number_hits])
     features_hits = torch.permute(
         torch.tensor(output["pf_features"][:, 0:number_hits]), (1, 0)
     )
@@ -78,7 +78,7 @@ def create_inputs_from_table(output, get_vtx):
     hit_particle_link = fix_splitted_tracks(hit_particle_link, y_data_graph)
 
     cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
-    # # features particles
+    # # # features particles
     unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
 
     features_particles = torch.permute(
@@ -108,7 +108,7 @@ def create_inputs_from_table(output, get_vtx):
 def create_graph_tracking(
     output,
 ):
-
+    print("creating graph")
     (
         y_data_graph,
         hit_type_one_hot,  # [no_tracks],
@@ -117,6 +117,8 @@ def create_graph_tracking(
         features_hits,
         hit_type,
     ) = create_inputs_from_table(output)
+    print(features_hits.shape)
+    #! REMOVING LOOPERS TO CHECK IF THE OUTPUTS ARE THE SAME
     mask_not_loopers, mask_particles = remove_loopers(hit_particle_link, y_data_graph)
     hit_type_one_hot = hit_type_one_hot[mask_not_loopers]
     cluster_id = cluster_id[mask_not_loopers]
@@ -124,6 +126,7 @@ def create_graph_tracking(
     features_hits = features_hits[mask_not_loopers]
     y_data_graph = y_data_graph[mask_particles]
     cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
+
     if hit_type_one_hot.shape[0] > 0:
         graph_empty = False
         g = dgl.DGLGraph()
@@ -153,7 +156,7 @@ def create_graph_tracking(
         y_data_graph = 0
     if features_hits.shape[0] < 10:
         graph_empty = True
-    # print("graph_empty", graph_empty)
+    print("graph_empty", graph_empty, features_hits.shape[0])
     return [g, y_data_graph], graph_empty
 
 
@@ -186,6 +189,7 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False):
     mask_not_loopers, mask_particles = remove_loopers(
         hit_particle_link, y_data_graph, features_hits[:, 3:6], cluster_id
     )
+
     hit_type_one_hot = hit_type_one_hot[mask_not_loopers]
     cluster_id = cluster_id[mask_not_loopers]
     hit_particle_link = hit_particle_link[mask_not_loopers]
@@ -193,7 +197,6 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False):
     hit_type = hit_type[mask_not_loopers]
     y_data_graph = y_data_graph[mask_particles]
     cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
-
     if hit_type_one_hot.shape[0] > 0:
         graph_empty = False
         mask_dc = hit_type == 0
@@ -234,6 +237,13 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False):
                     ),
                     dim=0,
                 )
+                # produced_from_secondary_ = torch.cat(
+                #     (
+                #         produced_from_secondary[mask_vtx].view(-1, 1),
+                #         produced_from_secondary[mask_dc].view(-1, 1),
+                #     ),
+                #     dim=0,
+                # )
                 # print(
                 #     features_hits[:, -1][mask_vtx].view(-1, 1).shape,
                 #     features_hits[:, -1][mask_dc].view(-1, 1).shape,
@@ -283,10 +293,11 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False):
         g.ndata["particle_number_nomap"] = particle_number_nomap
         g.ndata["pos_hits_xyz"] = pos_xyz
         g.ndata["cellid"] = cellid
-        g = create_weights_for_shower_hits(g)
+        # g.ndata["produced_from_secondary_"] = produced_from_secondary_.view(-1)
+        # g = create_weights_for_shower_hits(g)
         # uvz = convert_to_conformal_coordinates(pos_xyz)
         # g.ndata["conformal"] = uvz
-        if len(y_data_graph) < 2:
+        if len(y_data_graph) < 1:
             # print(y_data_graph)
             # print("hit_type", hit_type)
             # print("GRAPH IS EMPTY", len(y_data_graph))
@@ -297,7 +308,7 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False):
         y_data_graph = 0
     if features_hits.shape[0] < 10:
         graph_empty = True
-    # print("graph_empty", graph_empty)
+
     return [g, y_data_graph], graph_empty
 
 

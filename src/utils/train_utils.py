@@ -110,7 +110,6 @@ def to_filelist(args, mode="train"):
                 np.random.shuffle(new_files)
                 new_file_dict[name] = new_files
             file_dict = new_file_dict
-            print(args.local_rank, len(file_dict["_"]))
 
     if args.copy_inputs:
         import tempfile
@@ -139,6 +138,7 @@ def to_filelist(args, mode="train"):
 
     filelist = sum(file_dict.values(), [])
     assert len(filelist) == len(set(filelist))
+    print(args.local_rank, len(filelist))
     return file_dict, filelist
 
 

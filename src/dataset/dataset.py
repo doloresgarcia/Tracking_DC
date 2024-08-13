@@ -25,6 +25,8 @@ from src.dataset.functions_graph_tracking import (
     create_graph_tracking_global,
 )
 
+from src.dataset.functions_graph_tracking_CLD import create_graph_tracking_CLD
+
 
 def _finalize_inputs(table, data_config):
     # transformation
@@ -199,7 +201,6 @@ class _SimpleIter(object):
         self._try_get_next(init=True)
 
     def __next__(self):
-        # print(self.ipos, self.cursor)
         graph_empty = True
         self.iter_count += 1
         if self.dataset_cap is not None and self.iter_count > self.dataset_cap:
@@ -289,16 +290,16 @@ class _SimpleIter(object):
     def get_data(self, i):
         # inputs
         X = {k: self.table["_" + k][i].copy() for k in self._data_config.input_names}
-
-        if self._data_config.graph_config.get("tracking", False):
-            get_vtx = self._data_config.graph_config.get("VTX", False)
-            vector = self._data_config.graph_config.get("vector", False)
-
+        get_vtx = self._data_config.graph_config.get("VTX", False)
+        vector = self._data_config.graph_config.get("vector", False)
+        CLD = self._data_config.graph_config.get("tracking_CLD", False)
+        predict = self._data_config.graph_config.get("predict", False)
+        if CLD:
+            [g, features_partnn], graph_empty = create_graph_tracking_CLD(X, predict)
+        else:
             [g, features_partnn], graph_empty = create_graph_tracking_global(
                 X, get_vtx, vector
             )
-
-       
         return [g, features_partnn], graph_empty
 
 

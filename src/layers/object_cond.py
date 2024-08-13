@@ -4,7 +4,6 @@ import torch
 from torch_scatter import scatter_max, scatter_add, scatter_mean
 
 
-
 def safe_index(arr, index):
     # One-hot index (or zero if it's not in the array)
     if index not in arr:
@@ -323,6 +322,7 @@ def calc_LV_Lbeta(
         V_attractive = V_attractive.sum(dim=0)  # K objects
         #! divide by the number of accounted points
         V_attractive = V_attractive.view(-1) / (N_k.view(-1) + 1e-3)
+        # print("L_V_attractive", V_attractive)
         L_V_attractive = torch.mean(V_attractive)
     elif loss_type == "vrepweighted":
         if tracking:
@@ -448,6 +448,15 @@ def calc_LV_Lbeta(
         #! sum each object repulsive terms
         L_V_repulsive = V_repulsive.sum(dim=0)  # size number of objects
         number_of_repulsive_terms_per_object = torch.sum(M_inv, dim=0)
+        # print (
+        #     "number_of_repulsive_terms_per_object", number_of_repulsive_terms_per_object
+        # )
+        number_of_repulsive_terms_per_object[
+            number_of_repulsive_terms_per_object < 1
+        ] = 1
+        # print(
+        #     "number_of_repulsive_terms_per_object", number_of_repulsive_terms_per_object
+        # )
         L_V_repulsive = L_V_repulsive.view(
             -1
         ) / number_of_repulsive_terms_per_object.view(-1)
@@ -455,7 +464,8 @@ def calc_LV_Lbeta(
         L_V_repulsive2 = V_repulsive2.sum(dim=0)  # size number of objects
 
         L_V_repulsive2 = L_V_repulsive2.view(-1)
-
+        # print("L_V_repulsive", L_V_repulsive)
+        # print("L_V_repulsive2", L_V_repulsive2)
         # if not tracking:
         #     #! add to terms function (divide by total number of showers per event)
         #     # L_V_repulsive = scatter_add(L_V_repulsive, object_index) / n_objects
@@ -486,7 +496,7 @@ def calc_LV_Lbeta(
         L_V = (
             attr_weight * L_V_attractive
             # + repul_weight * L_V_repulsive
-            + L_V_repulsive2 / 300
+            + L_V_repulsive2 / 30
             # + L_clusters
             # + fill_loss
         )
@@ -498,6 +508,7 @@ def calc_LV_Lbeta(
             # + L_clusters
             # + fill_loss
         )
+
     if L_clusters != 0:
         print(
             "L-clusters is",
@@ -526,10 +537,13 @@ def calc_LV_Lbeta(
     # L_beta signal term
     if loss_type == "hgcalimplementation":
         beta_per_object_c = scatter_add(beta[is_sig], object_index)
+        # print("beta_per_object_c", beta_per_object_c)
         beta_alpha = beta[is_sig][index_alpha]
+        # print("beta_alpha", beta_alpha)
         L_beta_sig = torch.mean(
             1 - beta_alpha + 1 - torch.clip(beta_per_object_c, 0, 1)
         )
+        # print("L_beta_sig", L_beta_sig)
         # this is also per object so not dividing by batch size
 
         # version 2 with the LSE approximation for the max
@@ -539,7 +553,7 @@ def calc_LV_Lbeta(
         # beta_per_object_c = scatter_add(beta[is_sig], object_index)
         # beta_pen = beta_pen + 1 - torch.clip(beta_per_object_c, 0, 1)
         # L_beta_sig = beta_pen.sum() / len(beta_pen)
-        # L_beta_sig = L_beta_sig / 4
+        # L_beta_sig = L_beta_sig / 4  # to train IDEA this is 8
         L_beta_noise = L_beta_noise / batch_size
         # ? note: the training that worked quite well was dividing this by the batch size (1/4)
 
@@ -610,7 +624,6 @@ def calc_LV_Lbeta(
         )
 
     L_beta = L_beta_noise + L_beta_sig
-
     L_alpha_coordinates = torch.mean(torch.norm(x_alpha_original - x_alpha, p=2, dim=1))
     # ________________________________
     # Returning
@@ -688,28 +701,7 @@ def calc_LV_Lbeta(
                 L_V_repulsive,
                 L_beta_sig,
                 L_beta_noise,
-            )
-    else:
-        if not tracking:
-            return (
-                L_V / batch_size,  # 0
-                L_beta / batch_size,
-                loss_E,
-                0,  # loss_x
-                None,  # loss_particle_ids0,  # 4
-                loss_momentum,
-                0,  # loss_mass
-                None,  # pid_true,
-                None,  # pid_pred,
-                resolutions,
-                L_clusters,  # 10
-                0,  # fill loss
-                L_V_attractive / batch_size,
-                L_V_repulsive / batch_size,
-                L_alpha_coordinates,
-                L_exp,
-                norms_rep,  # 16
-                norms_att,  # 17
+                L_V_repulsive2,
             )
 
 

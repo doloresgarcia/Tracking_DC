@@ -21,26 +21,19 @@ import numpy as np
 from typing import Tuple, Union, List
 import dgl
 from src.logger.plotting_tools import PlotCoordinates
-from src.models.gravnet_calibration import (
-    obtain_batch_numbers,
-)
+from src.layers.batch_operations import obtain_batch_numbers
+
 import lightning as L
-from src.utils.nn.tools import log_losses_wandb_tracking
+from src.logger.logger_wandb import log_losses_wandb_tracking
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from src.layers.inference_oc_tracks import (
     evaluate_efficiency_tracks,
     store_at_batch_end,
 )
-from src.models.gravnet_3_L_tracking import object_condensation_loss_tracking
+from src.layers.losses import object_condensation_loss_tracking
 from xformers.ops.fmha import BlockDiagonalMask
 import os
 import wandb
-from src.layers.obtain_statistics import (
-    obtain_statistics_graph,
-    create_stats_dict,
-    save_stat_dict,
-    plot_distributions,
-)
 
 
 class ExampleWrapper(L.LightningModule):
@@ -91,8 +84,8 @@ class ExampleWrapper(L.LightningModule):
             mlp=MLPConfig(),  # Use default parameters for MLP
         )
         self.ScaledGooeyBatchNorm2_1 = nn.BatchNorm1d(self.input_dim, momentum=0.1)
-        self.clustering = nn.Linear(3, self.output_dim - 1, bias=False)
-        self.beta = nn.Linear(1, 1)
+        # self.clustering = nn.Linear(3, self.output_dim - 1, bias=False)
+        # self.beta = nn.Linear(1, 1)
         self.vector_like_data = False
 
     def forward(self, g, y, step_count, eval=""):
@@ -110,28 +103,21 @@ class ExampleWrapper(L.LightningModule):
         """
         inputs = g.ndata["pos_hits_xyz"]
 
-        if self.trainer.is_global_zero and step_count % 1000 == 0:
-            g.ndata["original_coords"] = g.ndata["pos_hits_xyz"]
-            PlotCoordinates(
-                g,
-                path="input_coords",
-                outdir=self.args.model_prefix,
-                features_type="ones",
-                predict=self.args.predict,
-                epoch=str(self.current_epoch) + eval,
-                step_count=step_count,
-            )
+        # if self.trainer.is_global_zero and step_count % 1000 == 0:
+        #     g.ndata["original_coords"] = g.ndata["pos_hits_xyz"]
+        #     PlotCoordinates(
+        #         g,
+        #         path="input_coords",
+        #         outdir=self.args.model_prefix,
+        #         features_type="ones",
+        #         predict=self.args.predict,
+        #         epoch=str(self.current_epoch) + eval,
+        #         step_count=step_count,
+        #     )
         inputs_scalar = g.ndata["hit_type"].view(-1, 1)
         inputs = self.ScaledGooeyBatchNorm2_1(inputs)
         # inputs = inputs.unsqueeze(0)
-        if self.vector_like_data:
-            velocities = g.ndata["vector"]
-            velocities = embed_translation(velocities)
-            embedded_inputs = (
-                embed_point(inputs) + embed_scalar(inputs_scalar) + velocities
-            )
-        else:
-            embedded_inputs = embed_point(inputs) + embed_scalar(inputs_scalar)
+        embedded_inputs = embed_point(inputs) + embed_scalar(inputs_scalar)
         embedded_inputs = embedded_inputs.unsqueeze(
             -2
         )  # (batch_size*num_points, 1, 16)
@@ -140,8 +126,7 @@ class ExampleWrapper(L.LightningModule):
         # Pass data through GATr
         embedded_outputs, _ = self.gatr(
             embedded_inputs, scalars=scalars, attention_mask=mask
-        )  # (..., num_points, 1, 16)
-        # assert embedded_outputs.shape[2:] == (1, 16)
+        )
 
         points = extract_point(embedded_outputs[:, 0, :])
 
@@ -152,20 +137,20 @@ class ExampleWrapper(L.LightningModule):
         x_point = points
         x_scalar = nodewise_outputs
 
-        x_cluster_coord = self.clustering(x_point)
-        beta = self.beta(x_scalar)
-        g.ndata["final_cluster"] = x_cluster_coord
-        g.ndata["beta"] = beta.view(-1)
-        if self.trainer.is_global_zero and step_count % 1000 == 0:
-            PlotCoordinates(
-                g,
-                path="final_clustering",
-                outdir=self.args.model_prefix,
-                predict=self.args.predict,
-                epoch=str(self.current_epoch) + eval,
-                step_count=step_count,
-            )
-        x = torch.cat((x_cluster_coord, beta.view(-1, 1)), dim=1)
+        # x_cluster_coord = self.clustering(x_point)
+        # beta = self.beta(x_scalar)
+        g.ndata["final_cluster"] = x_point
+        g.ndata["beta"] = x_scalar.view(-1)
+        # if self.trainer.is_global_zero and step_count % 1000 == 0:
+        #     PlotCoordinates(
+        #         g,
+        #         path="final_clustering",
+        #         outdir=self.args.model_prefix,
+        #         predict=self.args.predict,
+        #         epoch=str(self.current_epoch) + eval,
+        #         step_count=step_count,
+        #     )
+        x = torch.cat((x_point, x_scalar.view(-1, 1)), dim=1)
         return x
 
     def build_attention_mask(self, g):
@@ -188,13 +173,11 @@ class ExampleWrapper(L.LightningModule):
         )
 
     def training_step(self, batch, batch_idx):
+        print("training step, ", self.trainer.is_global_zero)
         y = batch[1]
 
         batch_g = batch[0]
-        # if self.trainer.is_global_zero and self.current_epoch == 0:
-        #     self.stat_dict = obtain_statistics_graph(
-        #         self.stat_dict, y, batch_g, pf=False
-        #     )
+
         if self.trainer.is_global_zero:
             model_output = self(batch_g, y, batch_idx)
         else:
@@ -232,7 +215,15 @@ class ExampleWrapper(L.LightningModule):
 
         model_output = self(batch_g, y, batch_idx, eval="_val")
         preds = model_output.squeeze()
+        # dic = {}
+        # batch_g.ndata["model_output"] = model_output
+        # dic["graph"] = batch_g
+        # dic["part_true"] = y
 
+        # torch.save(
+        #     dic,
+        #     self.args.model_prefix + "/graphs/" + str(batch_idx) + ".pt",
+        # )
         (loss, losses) = object_condensation_loss_tracking(
             batch_g,
             model_output,
@@ -249,7 +240,8 @@ class ExampleWrapper(L.LightningModule):
         if self.trainer.is_global_zero:
             log_losses_wandb_tracking(True, batch_idx, 0, losses, loss, val=True)
         # self.validation_step_outputs.append([model_output, batch_g, y])
-        if self.trainer.is_global_zero:
+        if self.trainer.is_global_zero and self.args.predict:
+
             df_batch = evaluate_efficiency_tracks(
                 batch_g,
                 model_output,
@@ -260,9 +252,24 @@ class ExampleWrapper(L.LightningModule):
                 path_save=self.args.model_prefix + "showers_df_evaluation",
                 store=True,
                 predict=False,
+                clustering_mode="clustering_normal",
             )
-            if self.args.predict:
-                self.df_showers.append(df_batch)
+
+            self.df_showers.append(df_batch)
+            df_batch_ct = evaluate_efficiency_tracks(
+                batch_g,
+                batch_g.ndata["ct_track_label"],
+                y,
+                0,
+                batch_idx,
+                0,
+                path_save=self.args.model_prefix + "showers_df_evaluation",
+                store=True,
+                predict=False,
+                ct=True,
+                clustering_mode="clustering_normal",
+            )
+            self.df_showers_ct.append(df_batch_ct)
 
     def on_train_epoch_end(self):
         # if self.current_epoch == 0 and self.trainer.is_global_zero:
@@ -288,7 +295,7 @@ class ExampleWrapper(L.LightningModule):
     def on_validation_epoch_start(self):
         self.make_mom_zero()
         self.df_showers = []
-        self.df_showers_pandora = []
+        self.df_showers_ct = []
         self.df_showes_db = []
 
     def make_mom_zero(self):
@@ -309,6 +316,14 @@ class ExampleWrapper(L.LightningModule):
                 0,
                 0,
                 0,
+                predict=True,
+            )
+            store_at_batch_end(
+                self.args.model_prefix + "showers_df_evaluation",
+                self.df_showers_ct,
+                0,
+                0,
+                1,
                 predict=True,
             )
         # if self.trainer.is_global_zero:

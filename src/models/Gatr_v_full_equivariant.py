@@ -76,8 +76,7 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
             # basis_k=self.basis_k,
         )
 
-        self.clustering = nn.Linear(16, self.output_dim - 1, bias=False)
-        self.beta = nn.Linear(16, 1)
+       
         self.vector_like_data = True
 
     def load_basis(self):
@@ -111,11 +110,10 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         embedded_outputs, _ = self.gatr(
             embedded_inputs, scalars=scalars, attention_mask=mask
         )
-        output = embedded_outputs[:, 0, :]
-        x_cluster_coord = self.clustering(output)
-        beta = self.beta(output)
-        x = torch.cat((x_cluster_coord, beta), dim=1)
-
+        
+        x_cluster_coord = extract_point(embedded_outputs[:, 0, :])
+        nodewise_outputs = extract_scalar(embedded_outputs)
+        x = torch.cat((x_cluster_coord, nodewise_outputs.view(-1, 1)), dim=1)
         return x
 
     def build_attention_mask(self, g):
@@ -162,19 +160,10 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
             use_average_cc_pos=self.args.use_average_cc_pos,
             tracking=True,
         )
-        # if self.trainer.is_global_zero:
-        #     log_losses_wandb_tracking(True, batch_idx, 0, losses, loss)
+        if self.trainer.is_global_zero:
+            log_losses_wandb_tracking(True, batch_idx, 0, losses, loss)
 
-        # self.loss_final = loss.item()
-        # dic = {}
-        # batch_g.ndata["model_output"] = model_output
-        # dic["graph"] = batch_g
-        # dic["part_true"] = y
-
-        # torch.save(
-        #     dic,
-        #     self.args.model_prefix + "/graphs/" + str(batch_idx) + ".pt",
-        # )
+        self.loss_final = loss.item()
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -188,29 +177,20 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         vector = batch_g.ndata["vector"]
         input_ = torch.cat((pos_hits_xyz, hit_type, vector), dim=1)
         model_output = self(batch_g, input_)
-        # dic = {}
-        # batch_g.ndata["model_output"] = model_output
-        # dic["graph"] = batch_g
-        # dic["part_true"] = y
 
-        # torch.save(
-        #     dic,
-        #     self.args.model_prefix + "/graphs/" + str(batch_idx) + ".pt",
-        # )
+        (loss, losses) = object_condensation_loss_tracking(
+            batch_g,
+            model_output,
+            y,
+            q_min=self.args.qmin,
+            frac_clustering_loss=0,
+            clust_loss_only=self.args.clustering_loss_only,
+            use_average_cc_pos=self.args.use_average_cc_pos,
+            tracking=True,
+        )
 
-        # (loss, losses) = object_condensation_loss_tracking(
-        #     batch_g,
-        #     model_output,
-        #     y,
-        #     q_min=self.args.qmin,
-        #     frac_clustering_loss=0,
-        #     clust_loss_only=self.args.clustering_loss_only,
-        #     use_average_cc_pos=self.args.use_average_cc_pos,
-        #     tracking=True,
-        # )
-
-        # if self.trainer.is_global_zero:
-        #     log_losses_wandb_tracking(True, batch_idx, 0, losses, loss, val=True)
+        if self.trainer.is_global_zero:
+            log_losses_wandb_tracking(True, batch_idx, 0, losses, loss, val=True)
         if self.trainer.is_global_zero and self.args.predict:
             df_batch = evaluate_efficiency_tracks(
                 batch_g,
@@ -227,11 +207,11 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
                 if len(df_batch) > 0:
                     self.df_showers.append(df_batch)
 
-    # def on_train_epoch_end(self):
-    # self.log("train_loss_epoch", self.loss_final)
+    def on_train_epoch_end(self):
+        self.log("train_loss_epoch", self.loss_final)
 
-    # def on_train_epoch_start(self):
-    #     self.make_mom_zero()
+    def on_train_epoch_start(self):
+        self.make_mom_zero()
 
     def on_validation_epoch_start(self):
         self.make_mom_zero()
