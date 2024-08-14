@@ -61,6 +61,7 @@ def calc_LV_Lbeta(
     hit_energies=None,
     tracking=False,
     dis=False,
+    CLD=False,
 ) -> Union[Tuple[torch.Tensor, torch.Tensor], dict]:
     """
     Calculates the L_V and L_beta object condensation losses.
@@ -492,37 +493,12 @@ def calc_LV_Lbeta(
             scatter_add(V_repulsive.sum(dim=0), batch_object)
             / (n_hits_per_event * nope)
         ).sum()
-    if not tracking:
-        L_V = (
-            attr_weight * L_V_attractive
-            # + repul_weight * L_V_repulsive
-            + L_V_repulsive2 / 30
-            # + L_clusters
-            # + fill_loss
-        )
+    if CLD:
+        L_V = attr_weight * L_V_attractive + L_V_repulsive2 / 300
+
     else:
-        L_V = (
-            attr_weight * L_V_attractive
-            + repul_weight * L_V_repulsive
-            # + L_V_repulsive2 / 300
-            # + L_clusters
-            # + fill_loss
-        )
 
-    if L_clusters != 0:
-        print(
-            "L-clusters is",
-            100 * (L_clusters / L_V).detach().cpu().item(),
-            "% of L_V. L_clusters value:",
-            L_clusters.detach().cpu().item(),
-        )
-    # else:
-    #     print("L-clusters is ZERO")
-    # ________________________________
-    # L_beta term
-
-    # -------
-    # L_beta noise term
+        L_V = attr_weight * L_V_attractive + repul_weight * L_V_repulsive
 
     n_noise_hits_per_event = scatter_count(batch[is_noise])
     n_noise_hits_per_event[n_noise_hits_per_event == 0] = 1
@@ -532,14 +508,14 @@ def calc_LV_Lbeta(
             (scatter_add(beta[is_noise], batch[is_noise])) / n_noise_hits_per_event
         ).sum()
     )
-    # print("L_beta_noise", L_beta_noise / batch_size)
+    L_beta_noise = L_beta_noise / batch_size
     # -------
     # L_beta signal term
     if loss_type == "hgcalimplementation":
         beta_per_object_c = scatter_add(beta[is_sig], object_index)
-        # print("beta_per_object_c", beta_per_object_c)
+
         beta_alpha = beta[is_sig][index_alpha]
-        # print("beta_alpha", beta_alpha)
+
         L_beta_sig = torch.mean(
             1 - beta_alpha + 1 - torch.clip(beta_per_object_c, 0, 1)
         )
@@ -554,7 +530,6 @@ def calc_LV_Lbeta(
         # beta_pen = beta_pen + 1 - torch.clip(beta_per_object_c, 0, 1)
         # L_beta_sig = beta_pen.sum() / len(beta_pen)
         # L_beta_sig = L_beta_sig / 4  # to train IDEA this is 8
-        L_beta_noise = L_beta_noise / batch_size
         # ? note: the training that worked quite well was dividing this by the batch size (1/4)
 
     elif loss_type == "vrepweighted":

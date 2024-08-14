@@ -198,6 +198,7 @@ class ExampleWrapper(L.LightningModule):
             use_average_cc_pos=self.args.use_average_cc_pos,
             # loss_type=self.args.losstype,
             tracking=True,
+            CLD=True,
         )
         loss = loss
         # print("training step", batch_idx, loss)
@@ -234,6 +235,7 @@ class ExampleWrapper(L.LightningModule):
             use_average_cc_pos=self.args.use_average_cc_pos,
             # loss_type=self.args.losstype,
             tracking=True,
+            CLD=True,
         )
         loss = loss  # + 0.01 * loss_ll  # + 1 / 20 * loss_E  # add energy loss # loss +
         # print("validation step", batch_idx, loss)

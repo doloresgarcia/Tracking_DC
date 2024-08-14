@@ -3,6 +3,7 @@ import torch
 import dgl
 from torch_scatter import scatter_add, scatter_sum, scatter_min, scatter_max
 from sklearn.preprocessing import StandardScaler
+import time
 
 # TODO remove the particles with little hits or mark them as noise
 def get_number_hits(part_idx):
@@ -12,17 +13,28 @@ def get_number_hits(part_idx):
 
 def find_cluster_id(hit_particle_link):
     unique_list_particles = list(np.unique(hit_particle_link))
+
     if np.sum(np.array(unique_list_particles) == -1) > 0:
         non_noise_idx = torch.where(unique_list_particles != -1)[0]
         noise_idx = torch.where(unique_list_particles == -1)[0]
         non_noise_particles = unique_list_particles[non_noise_idx]
-        cluster_id = map(lambda x: non_noise_particles.index(x), hit_particle_link)
-        cluster_id = torch.Tensor(list(cluster_id)) + 1
+        # cluster_id = map(lambda x: non_noise_particles.index(x), hit_particle_link)
+        # cluster_id = torch.Tensor(list(cluster_id)) + 1
+        unique_list_particles1 = torch.tensor(non_noise_particles)
+        cluster_id = torch.searchsorted(
+            unique_list_particles1, hit_particle_link, right=False
+        )
+        cluster_id = cluster_id + 1
         unique_list_particles[non_noise_idx] = cluster_id
         unique_list_particles[noise_idx] = 0
     else:
-        cluster_id = map(lambda x: unique_list_particles.index(x), hit_particle_link)
-        cluster_id = torch.Tensor(list(cluster_id)) + 1
+        unique_list_particles1 = torch.unique(hit_particle_link)
+        cluster_id = torch.searchsorted(
+            unique_list_particles1, hit_particle_link, right=False
+        )
+        # cluster_id = map(lambda x: unique_list_particles.index(x), hit_particle_link)
+        # print(torch.Tensor(list(cluster_id)))
+        cluster_id = cluster_id + 1  # torch.Tensor(list(cluster_id)) + 1
     return cluster_id, unique_list_particles
 
 
@@ -46,12 +58,14 @@ def fix_splitted_tracks(hit_particle_link, y):
 
 
 def create_inputs_from_table(output, get_vtx, cld=False):
+
     number_hits = np.int32(np.sum(output["pf_mask"][0]))
-    # print("number_hits", number_hits)
+
     number_part = np.int32(np.sum(output["pf_mask"][1]))
     #! idx of particle does not start at 1
     hit_particle_link = torch.tensor(output["pf_vectoronly"][0, 0:number_hits])
-    # produced_by_secondary = torch.tensor(output["pf_by_secondary"][0, 0:number_hits])
+
+    assert output["pf_vectoronly"].shape[1] > hit_particle_link.shape[0]
     features_hits = torch.permute(
         torch.tensor(output["pf_features"][:, 0:number_hits]), (1, 0)
     )
@@ -79,12 +93,15 @@ def create_inputs_from_table(output, get_vtx, cld=False):
     mask_particles = check_unique_particles(unique_list_particles, y_id)
 
     y_data_graph = features_particles[mask_particles]
+
+    assert features_particles.shape[0] > torch.sum(mask_particles).item()
     hit_particle_link = fix_splitted_tracks(hit_particle_link, y_data_graph)
 
+    tic = time.time()
     cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
-    # # # features particles
     unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
-
+    toc = time.time()
+    print("find_cluster_id ", toc - tic)
     features_particles = torch.permute(
         torch.tensor(output["pf_vectors"][:, :]),
         (1, 0),
@@ -137,16 +154,16 @@ def create_graph_tracking(
     hit_particle_link = hit_particle_link[mask_not_loopers]
     features_hits = features_hits[mask_not_loopers]
     y_data_graph = y_data_graph[mask_particles]
-    cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
-
+    # cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
+    unique_list_particles = torch.unique(hit_particle_link)
+    cluster_id = torch.searchsorted(
+        unique_list_particles, hit_particle_link, right=False
+    )
     if hit_type_one_hot.shape[0] > 0:
         graph_empty = False
         g = dgl.DGLGraph()
         g.add_nodes(hit_type_one_hot.shape[0])
 
-        # hit_features_graph = torch.cat(
-        #     (features_hits[:, 4:-1], hit_type_one_hot), dim=1
-        # )  # dims = 7
         hit_features_graph = features_hits[:, 4:-1]
         # uvz = convert_to_conformal_coordinates(features_hits[:, 0:3])
         # polar = convert_to_polar_coordinates(uvz)
@@ -320,6 +337,7 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False):
         y_data_graph = 0
     if features_hits.shape[0] < 10:
         graph_empty = True
+    toc = time.time()
 
     return [g, y_data_graph], graph_empty
 

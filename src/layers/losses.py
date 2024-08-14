@@ -23,6 +23,7 @@ def object_condensation_loss_tracking(
     output_dim=4,
     clust_space_norm="none",
     tracking=False,
+    CLD=False,
 ):
 
     _, S = pred.shape
@@ -68,6 +69,7 @@ def object_condensation_loss_tracking(
         use_average_cc_pos=use_average_cc_pos,
         loss_type=loss_type,
         tracking=tracking,
+        CLD=CLD,
     )
 
     loss = a[0] + a[1]  # + 5 * a[14]
