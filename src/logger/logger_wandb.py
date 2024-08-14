@@ -17,5 +17,6 @@ def log_losses_wandb_tracking(
                 "loss" + val_ + " beta noise": losses[5],
                 "loss" + val_ + " attractive": losses[2],
                 "loss" + val_ + " repulsive": losses[3],
+                "loss" + val_ + " repulsive 2": losses[6],
             }
         )

@@ -162,8 +162,8 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
             use_average_cc_pos=self.args.use_average_cc_pos,
             tracking=True,
         )
-        # if self.trainer.is_global_zero:
-        #     log_losses_wandb_tracking(True, batch_idx, 0, losses, loss)
+        if self.trainer.is_global_zero:
+            log_losses_wandb_tracking(True, batch_idx, 0, losses, loss)
 
         # self.loss_final = loss.item()
         # dic = {}
@@ -198,19 +198,19 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         #     self.args.model_prefix + "/graphs/" + str(batch_idx) + ".pt",
         # )
 
-        # (loss, losses) = object_condensation_loss_tracking(
-        #     batch_g,
-        #     model_output,
-        #     y,
-        #     q_min=self.args.qmin,
-        #     frac_clustering_loss=0,
-        #     clust_loss_only=self.args.clustering_loss_only,
-        #     use_average_cc_pos=self.args.use_average_cc_pos,
-        #     tracking=True,
-        # )
+        (loss, losses) = object_condensation_loss_tracking(
+            batch_g,
+            model_output,
+            y,
+            q_min=self.args.qmin,
+            frac_clustering_loss=0,
+            clust_loss_only=self.args.clustering_loss_only,
+            use_average_cc_pos=self.args.use_average_cc_pos,
+            tracking=True,
+        )
 
-        # if self.trainer.is_global_zero:
-        #     log_losses_wandb_tracking(True, batch_idx, 0, losses, loss, val=True)
+        if self.trainer.is_global_zero:
+            log_losses_wandb_tracking(True, batch_idx, 0, losses, loss, val=True)
         if self.trainer.is_global_zero and self.args.predict:
             df_batch = evaluate_efficiency_tracks(
                 batch_g,

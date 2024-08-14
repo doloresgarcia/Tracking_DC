@@ -43,14 +43,14 @@ preprocess:
 inputs:
    pf_points:
       pad_mode: wrap
-      length: 25000
+      length: 10000
       vars:
          - [hit_x, null]
          - [hit_y, null]
          - [hit_z, null]
    pf_features:
       pad_mode: wrap
-      length: 25000
+      length: 10000
       vars:
          - [hit_x, null] #VX
          - [hit_y, null] #VX
@@ -66,7 +66,7 @@ inputs:
         
 
    pf_vectors:
-      length: 25000
+      length: 5000
       pad_mode: wrap
       vars:
          - [part_theta, null] 
@@ -75,17 +75,20 @@ inputs:
          - [part_pid, null] 
          - [part_id, null] 
          - [part_p, null] 
-         - [part_parent, null] 
+         - [part_parent, null]
+
    pf_vectoronly:
-      length: 25000
+      length: 10000
       pad_mode: wrap
       vars:
-      - [hit_genlink0, null] 
+         - [hit_genlink0, null] 
+   
+ 
 
 
 
    pf_mask:
-      length: 25000
+      length: 10000
       pad_mode: constant
       vars:
          - [hit_mask, null]

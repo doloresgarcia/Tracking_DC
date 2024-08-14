@@ -42,9 +42,10 @@ from src.utils.train_utils import get_samples_steps_per_epoch, model_setup, get_
 
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-os.environ["TORCH_LOGS"] = "onnx_diagnostics"
-os.environ["TORCHLIB_EXPERIMENTAL_PREFER_TRACING"] = "1"
+# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+# os.environ["TORCH_USE_CUDA_DSA"] = "1"
+# os.environ["TORCH_LOGS"] = "onnx_diagnostics"
+# os.environ["TORCHLIB_EXPERIMENTAL_PREFER_TRACING"] = "1
 
 
 def main():
@@ -71,28 +72,45 @@ def main():
     print("HEEERE")
     if args.export_onnx:
         print("exporting to onnx")
-        filepath = args.model_prefix + "model_multivector_10.onnx"
+        filepath = args.model_prefix + "model_multivector_1_input.onnx"
         # args1 = (torch.randn((10, 3)), torch.randn((10, 1)), torch.randn((10, 3)))
         torch._dynamo.config.verbose = True
-        # if args.load_model_weights is not None:
-        #     from src.models.Gatr_v import ExampleWrapper
+        if args.load_model_weights is not None:
+            from src.models.Gatr_v import ExampleWrapper
 
-        #     model = ExampleWrapper.load_from_checkpoint(
-        #         args.load_model_weights, args=args, dev=0
-        #     )
+            print("adding weights")
+            model = ExampleWrapper.load_from_checkpoint(
+                args.load_model_weights, args=args, dev=0
+            )
         model.eval()
-        args1 = torch.randn((10, 1, 16))
+        model.ScaledGooeyBatchNorm2_1.momentum = 0
+        # dic = torch.load(
+        #     "/eos/user/m/mgarciam/EVAL_REPOS/Tracking_wcoc/models/test/showers_df_evaluation/graphs_all_hdb1/0_0_0.pt",
+        #     map_location="cpu",
+        # )
+        # pos_hits_xyz = dic["graph"].ndata["pos_hits_xyz"]
+        # hit_type = dic["graph"].ndata["hit_type"].view(-1, 1)
+        # vector = dic["graph"].ndata["vector"]
+        # args1 = (pos_hits_xyz, hit_type, vector)
+        # args1 = (torch.randn((10, 3)), torch.randn((10, 1)), torch.randn((10, 3)))
+        args1 = torch.randn((10, 7))
+        # args1 = (torch.zeros((10, 3)), torch.zeros((10, 1)), torch.zeros((10, 3)))
         export_options = torch.onnx.ExportOptions(dynamic_shapes=True)
+        # onnx_program = torch.onnx.export(  # dynamo_
+        #     model,
+        #     args1,
+        #     filepath,
+        #     # export_options=export_options,
+        #     opset_version=18,
+        #     input_names=["input"],
+        #     output_names=["output"],
+        #     dynamic_axes={
+        #         "input": [0],
+        #         "output": [0],
+        #     },
+        # )
         onnx_program = torch.onnx.dynamo_export(
-            model,
-            args1,
-            export_options=export_options,
-            # input_names=["input"],
-            # output_names=["output"],
-            # dynamic_axes={
-            #     "input": [0],
-            #     "output": [0],
-            # },
+            model, args1, export_options=export_options
         )
         onnx_program.save(filepath)
         # input_sample = torch.randn((10, 7))
@@ -101,7 +119,7 @@ def main():
     elif training_mode:
         print("USING TRAINING MODE")
         if args.load_model_weights is not None:
-            from src.models.Gatr import ExampleWrapper
+            from src.models.Gatr_v import ExampleWrapper
 
             model = ExampleWrapper.load_from_checkpoint(
                 args.load_model_weights, args=args, dev=0
@@ -123,14 +141,14 @@ def main():
         ]
         trainer = L.Trainer(
             callbacks=callbacks,
-            # accelerator="cpu",
-            # devices=[0, 1, 2, 3],
+            accelerator="gpu",
+            devices=[0, 1, 2, 3],
             default_root_dir=args.model_prefix,
             logger=wandb_logger,
-            max_epochs=5,
+            # max_epochs=5,
             # strategy="ddp",
             # limit_train_batches=20,
-            limit_train_batches=5,
+            limit_train_batches=6000,
             limit_val_batches=5,
         )
         args.local_rank = trainer.global_rank
@@ -146,17 +164,19 @@ def main():
     elif args.data_test:
         trainer = L.Trainer(
             callbacks=[TQDMProgressBar(refresh_rate=1)],
-            # accelerator="cpu",
-            # devices=[0],
+            accelerator="gpu",
+            devices=[0],
             default_root_dir=args.model_prefix,
             logger=wandb_logger,
-            limit_val_batches=5,
+            # limit_val_batches=5,
         )
+
         for name, get_test_loader in test_loaders.items():
             test_loader = get_test_loader()
+
             trainer.validate(
                 model=model,
-                # ckpt_path=args.load_model_weights,
+                ckpt_path=args.load_model_weights,
                 dataloaders=test_loader,
             )
 

@@ -71,10 +71,14 @@ def create_inputs_from_table(output, get_vtx, cld=False):
     unique_list_particles = list(np.unique(hit_particle_link))
     unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
     features_particles = torch.permute(
-        torch.tensor(output["pf_vectors"][:, list(unique_list_particles)]),
+        torch.tensor(output["pf_vectors"][:, :]),
         (1, 0),
     )
     y_data_graph = features_particles
+    y_id = features_particles[:, 4]
+    mask_particles = check_unique_particles(unique_list_particles, y_id)
+
+    y_data_graph = features_particles[mask_particles]
     hit_particle_link = fix_splitted_tracks(hit_particle_link, y_data_graph)
 
     cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
@@ -82,15 +86,14 @@ def create_inputs_from_table(output, get_vtx, cld=False):
     unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
 
     features_particles = torch.permute(
-        torch.tensor(output["pf_vectors"][:, list(unique_list_particles)]),
+        torch.tensor(output["pf_vectors"][:, :]),
         (1, 0),
     )
 
-    # y_mass = features_particles[:, 3].view(-1).unsqueeze(1)
-    # y_mom = features_particles[:, 2].view(-1).unsqueeze(1)
-    # y_energy = torch.sqrt(y_mass**2 + y_mom**2)
+    y_id = features_particles[:, 4]
+    mask_particles = check_unique_particles(unique_list_particles, y_id)
 
-    y_data_graph = features_particles
+    y_data_graph = features_particles[mask_particles]
 
     assert len(y_data_graph) == len(unique_list_particles)
 
@@ -103,6 +106,15 @@ def create_inputs_from_table(output, get_vtx, cld=False):
         hit_type,
     ]
     return result
+
+
+def check_unique_particles(unique_list_particles, y_id):
+    mask = torch.zeros_like(y_id)
+    for i in range(0, len(unique_list_particles)):
+        id_u = unique_list_particles[i]
+        if torch.sum(y_id == id_u) > 0:
+            mask = mask + (y_id == id_u)
+    return mask.to(bool)
 
 
 def create_graph_tracking(
