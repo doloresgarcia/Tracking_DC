@@ -124,12 +124,10 @@ def main():
             model = ExampleWrapper.load_from_checkpoint(
                 args.load_model_weights, args=args, dev=0
             )
-        val_every_n_epochs = 1
-
         checkpoint_callback = ModelCheckpoint(
             dirpath=args.model_prefix,  # checkpoints_path, # <--- specify this on the trainer itself for version control
-            filename="_{epoch}",
-            every_n_epochs=val_every_n_epochs,
+            filename="_{epoch}_{step}",
+            every_n_train_steps=1000,
             save_top_k=-1,  # <--- this is important!
             save_weights_only=True,
         )
@@ -148,7 +146,7 @@ def main():
             # max_epochs=5,
             # strategy="ddp",
             # limit_train_batches=20,
-            limit_train_batches=6000,
+            limit_train_batches=5000,
             limit_val_batches=5,
         )
         args.local_rank = trainer.global_rank
