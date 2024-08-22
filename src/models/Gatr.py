@@ -216,15 +216,15 @@ class ExampleWrapper(L.LightningModule):
 
         model_output = self(batch_g, y, batch_idx, eval="_val")
         preds = model_output.squeeze()
-        # dic = {}
-        # batch_g.ndata["model_output"] = model_output
-        # dic["graph"] = batch_g
-        # dic["part_true"] = y
+        dic = {}
+        batch_g.ndata["model_output"] = model_output
+        dic["graph"] = batch_g
+        dic["part_true"] = y
 
-        # torch.save(
-        #     dic,
-        #     self.args.model_prefix + "/graphs/" + str(batch_idx) + ".pt",
-        # )
+        torch.save(
+            dic,
+            self.args.model_prefix + "/graphs/" + str(batch_idx) + ".pt",
+        )
         (loss, losses) = object_condensation_loss_tracking(
             batch_g,
             model_output,
