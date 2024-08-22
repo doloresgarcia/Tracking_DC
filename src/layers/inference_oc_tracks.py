@@ -118,17 +118,17 @@ def evaluate_efficiency_tracks(
             )
             # if len(shower_p_unique) < len(particle_ids):
             # print("storing  event", local_rank, step, i)
-            # torch.save(
-            #     dic,
-            #     path_save
-            #     + "/graphs_all_hdb2/"
-            #     + str(local_rank)
-            #     + "_"
-            #     + str(step)
-            #     + "_"
-            #     + str(i)
-            #     + ".pt",
-            # )
+            torch.save(
+                dic,
+                path_save
+                + "/graphs_all_hdb2/"
+                + str(local_rank)
+                + "_"
+                + str(step)
+                + "_"
+                + str(i)
+                + ".pt",
+            )
             df_list.append(df_event)
     if len(df_list) > 0:
         df_batch = pd.concat(df_list)

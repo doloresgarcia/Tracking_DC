@@ -142,7 +142,7 @@ def calc_LV_Lbeta(
 
     # Calculate q
     if loss_type == "hgcalimplementation" or loss_type == "vrepweighted":
-        q = (beta.arctanh() / 1.01) ** 2 + qmin
+        q = (beta.clip(0.0, 1 - 1e-4).arctanh() / 1.01) ** 2 + qmin
     elif beta_stabilizing == "paper":
         q = beta.arctanh() ** 2 + qmin
     elif beta_stabilizing == "clip":
@@ -323,7 +323,6 @@ def calc_LV_Lbeta(
         V_attractive = V_attractive.sum(dim=0)  # K objects
         #! divide by the number of accounted points
         V_attractive = V_attractive.view(-1) / (N_k.view(-1) + 1e-3)
-        # print("L_V_attractive", V_attractive)
         L_V_attractive = torch.mean(V_attractive)
     elif loss_type == "vrepweighted":
         if tracking:
@@ -646,38 +645,15 @@ def calc_LV_Lbeta(
     #    pass
     L_exp = L_beta
     if loss_type == "hgcalimplementation" or loss_type == "vrepweighted":
-        if not tracking:
-            return (
-                L_V,  # 0
-                L_beta,
-                loss_E,
-                0,  # loss_x
-                None,  # loss_particle_ids0,  # 4
-                0,  # loss_momentum
-                0,  # loss mass
-                None,  # pid_true,
-                None,  # pid_pred,
-                0,  # resolutions
-                L_clusters,  # 10
-                0,  # fill_loss
-                L_V_attractive,
-                L_V_repulsive,
-                L_alpha_coordinates,
-                L_exp,
-                norms_rep,  # 16
-                norms_att,  # 17
-                L_V_repulsive2,
-            )
-        else:
-            return (
-                L_V,  # 0
-                L_beta,
-                L_V_attractive,
-                L_V_repulsive,
-                L_beta_sig,
-                L_beta_noise,
-                L_V_repulsive2,
-            )
+        return (
+            L_V,  # 0
+            L_beta,
+            L_V_attractive,
+            L_V_repulsive,
+            L_beta_sig,
+            L_beta_noise,
+            L_V_repulsive2,
+        )
 
 
 def formatted_loss_components_string(components: dict) -> str:
