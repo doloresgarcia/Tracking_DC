@@ -26,7 +26,9 @@ from Configurables import UniqueIDGenSvc
 from Configurables import k4DataSvc, MarlinProcessorWrapper
 
 
-
+list_overlay = []
+for i in range(1,501):
+    list_overlay.append("/eos/experiment/fcc/ee/datasets/CLD_tracking/Pythia/CLD_background_only/out_sim_edm4hep_background_"+str(i)+".root")
 
 
 id_service = UniqueIDGenSvc("UniqueIDGenSvc")
@@ -36,7 +38,7 @@ eds = EventDataSvc("EventDataSvc")
 iosvc = IOSvc()
 # iosvc.input = "input.root"
 iosvc.Input = "out_sim_edm4hep.root"
-iosvc.Output = "output_overlay_new.root"
+iosvc.Output = "output_overlay_new1.root"
 
 # inp.collections = [
 #     "EventHeader",
@@ -56,17 +58,18 @@ overlay.OutputSimCalorimeterHits = ["NewHCalBarrelCollection"]
 overlay.OutputCaloHitContributions = ["NewCaloHitCollection"]
 # overlay.StartBackgroundEventIndex = 0
 overlay.AllowReusingBackgroundFiles = True
+overlay.CopyCellIDMetadata = True
 overlay.NumberBackground = [1]
 overlay.Poisson_random_NOverlay = [False]
 overlay.BackgroundFileNames = [
-      ["out_sim_edm4hep_background.root"]
+      list_overlay
 ]
 overlay.TimeWindows = {"MCParticles": [-10, 1000], "VertexBarrelCollection": [-10, 1000], "VertexEndcapCollection": [-10, 1000], "HCalBarrelCollection": [-10, 1000],"InnerTrackerBarrelCollection": [-10, 1000], "OuterTrackerBarrelCollection": [-10, 1000],"InnerTrackerEndcapCollection": [-10,1000],"OuterTrackerEndcapCollection": [-10,1000] }
 
 
 ApplicationMgr(TopAlg=[overlay],
                EvtSel="NONE",
-               EvtMax=1,
+               EvtMax=200,
                ExtSvc=[eds],
                OutputLevel=INFO,
                )
