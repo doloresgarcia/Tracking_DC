@@ -4,31 +4,47 @@ import dgl
 from torch_scatter import scatter_add, scatter_sum, scatter_min, scatter_max
 from sklearn.preprocessing import StandardScaler
 
+
 # TODO remove the particles with little hits or mark them as noise
 def get_number_hits(part_idx):
     number_of_hits = scatter_sum(torch.ones_like(part_idx), part_idx.long(), dim=0)
     return number_of_hits[1:].view(-1)
 
 
+# def find_cluster_id(hit_particle_link):
+
+#         non_noise_idx = torch.where(hit_particle_link != -1)[0]
+#         noise_idx = torch.where(hit_particle_link == -1)[0]
+#         non_noise_particles = list(np.array(unique_list_particles[1:]))
+#         cluster_id = map(
+#             lambda x: non_noise_particles.index(x), hit_particle_link[non_noise_idx]
+#         )
+#         cluster_id_small = torch.Tensor(list(cluster_id)) + 1
+#         cluster_id = hit_particle_link.clone()
+#         cluster_id[non_noise_idx] = cluster_id_small
+#         cluster_id[noise_idx] = 0
+
+
 def find_cluster_id(hit_particle_link):
-    unique_list_particles = torch.unique(hit_particle_link)
-    if torch.sum(unique_list_particles == -1) > 0:
-        non_noise_idx = torch.where(hit_particle_link != -1)[0]
-        noise_idx = torch.where(hit_particle_link == -1)[0]
-        non_noise_particles = list(np.array(unique_list_particles[1:]))
-        cluster_id = map(
-            lambda x: non_noise_particles.index(x), hit_particle_link[non_noise_idx]
+    unique_list_particles = list(np.unique(hit_particle_link))
+
+    if np.sum(np.array(unique_list_particles) == -1) > 0:
+        non_noise_idx = torch.where(hit_particle_link != -1)[0]  #
+        noise_idx = torch.where(hit_particle_link == -1)[0]  #
+        unique_list_particles1 = torch.unique(hit_particle_link)[1:]
+        cluster_id_ = torch.searchsorted(
+            unique_list_particles1, hit_particle_link[non_noise_idx], right=False
         )
-        cluster_id_small = torch.Tensor(list(cluster_id)) + 1
+        cluster_id_small = 1.0 * cluster_id_ + 1
         cluster_id = hit_particle_link.clone()
         cluster_id[non_noise_idx] = cluster_id_small
         cluster_id[noise_idx] = 0
-        # unique_list_particles[non_noise_idx] = cluster_id
-        # unique_list_particles[noise_idx] = 0
     else:
-        unique_list_particles = list(np.array(unique_list_particles))
-        cluster_id = map(lambda x: unique_list_particles.index(x), hit_particle_link)
-        cluster_id = torch.Tensor(list(cluster_id)) + 1
+        unique_list_particles1 = torch.unique(hit_particle_link)
+        cluster_id = torch.searchsorted(
+            unique_list_particles1, hit_particle_link, right=False
+        )
+        cluster_id = cluster_id + 1
     return cluster_id, unique_list_particles
 
 
@@ -36,12 +52,17 @@ def scatter_count(input: torch.Tensor):
     return scatter_add(torch.ones_like(input, dtype=torch.long), input.long())
 
 
-def create_inputs_from_table(output, predict=False):
+def create_inputs_from_table(output, predict=False, tau=False):
     number_hits = np.int32(np.sum(output["pf_mask"][0]))
     # print("number_hits", number_hits)
     number_part = np.int32(np.sum(output["pf_mask"][1]))
     #! idx of particle does not start at 1
     hit_particle_link = torch.tensor(output["pf_vectoronly"][0, 0:number_hits])
+    if tau:
+        hit_particle_link_tau = torch.tensor(output["pf_vectoronly"][1, 0:number_hits])
+        unique_tau_label = torch.unique(hit_particle_link_tau)
+    else:
+        hit_particle_link_tau = None
     if predict:
         ct_track = torch.tensor(output["pf_vectoronly"][2, 0:number_hits])
         unique_id = torch.tensor(output["pf_vectoronly"][3, 0:number_hits])
@@ -63,7 +84,11 @@ def create_inputs_from_table(output, predict=False):
         torch.tensor(output["pf_vectors"][:, list(unique_list_particles)]),
         (1, 0),
     )
-
+    if tau and predict:
+        tau_mom = torch.tensor(output["pf_vectors"][6, list(unique_tau_label.long().numpy())])
+        # print(tau_mom)
+    else:
+        tau_mom = None
     y_data_graph = features_particles
 
     assert len(y_data_graph) == len(unique_list_particles)
@@ -76,11 +101,13 @@ def create_inputs_from_table(output, predict=False):
         hit_type,
         ct_track,
         unique_id,
+        hit_particle_link_tau,
+        tau_mom
     ]
     return result
 
 
-def create_graph_tracking_CLD(output, predict):
+def create_graph_tracking_CLD(output, predict, tau):
 
     (
         y_data_graph,
@@ -90,7 +117,9 @@ def create_graph_tracking_CLD(output, predict):
         hit_type,
         ct_track_label,
         unique_id,
-    ) = create_inputs_from_table(output, predict=predict)
+        hit_particle_link_tau,
+        tau_mom
+    ) = create_inputs_from_table(output, predict=predict, tau=tau)
     mask_loopers, mask_particles = create_noise_label(
         hit_particle_link, y_data_graph, cluster_id
     )
@@ -116,10 +145,19 @@ def create_graph_tracking_CLD(output, predict):
         # ! currently we are not doing the pid or mass regression
         g.ndata["h"] = hit_features_graph
         g.ndata["hit_type"] = hit_type
-        g.ndata["particle_number"] = cluster_id
+        g.ndata["particle_number"] = cluster_id.to(torch.float32)
         g.ndata["particle_number_nomap"] = hit_particle_link
+        if tau:
+            g.ndata["hit_particle_link_tau"] = hit_particle_link_tau
         g.ndata["pos_hits_xyz"] = features_hits[:, 0:3]
         if predict:
+            if tau:
+                cluster_id_tau, _ = find_cluster_id(hit_particle_link_tau)
+                tau_mom = tau_mom.view(-1)
+                if torch.sum(cluster_id_tau==0)>0:
+                    g.ndata["tau_mom"] = tau_mom[cluster_id_tau.long()]
+                else:
+                    g.ndata["tau_mom"] = tau_mom[cluster_id_tau-1]
             g.ndata["ct_track_label"] = ct_track_label
             g.ndata["unique_id"] = unique_id
         if len(y_data_graph) < 4:

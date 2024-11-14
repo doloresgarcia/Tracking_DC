@@ -1,11 +1,11 @@
 from os import path
 import sys
 
-from gatr import GATr, SelfAttentionConfig, MLPConfig
+# from gatr import GATr, SelfAttentionConfig, MLPConfig
 
-# from src.gatr.nets.gatr import GATr
-# from src.gatr.layers.attention.config import SelfAttentionConfig
-# from src.gatr.layers.mlp.config import MLPConfig
+from src.gatr.nets.gatr import GATr
+from src.gatr.layers.attention.config import SelfAttentionConfig
+from src.gatr.layers.mlp.config import MLPConfig
 from gatr.interface import (
     embed_point,
     extract_scalar,
@@ -69,11 +69,11 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
             num_blocks=blocks,
             attention=SelfAttentionConfig(),
             mlp=MLPConfig(),
-            # basis_gp=self.basis_gp,
-            # basis_outer=self.basis_outer,
-            # basis_pin=self.pin_basis,
-            # basis_q=self.basis_q,
-            # basis_k=self.basis_k,
+            basis_gp=self.basis_gp,
+            basis_outer=self.basis_outer,
+            basis_pin=self.pin_basis,
+            basis_q=self.basis_q,
+            basis_k=self.basis_k,
         )
 
         self.clustering = nn.Linear(16, self.output_dim - 1, bias=False)
@@ -108,10 +108,8 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         embedded_inputs = embed_point(inputs) + embed_scalar(hit_type) + velocities
         embedded_inputs = embedded_inputs.unsqueeze(-2)
         scalars = torch.zeros((inputs.shape[0], 1))
-        mask = self.build_attention_mask(g)
-        embedded_outputs, _ = self.gatr(
-            embedded_inputs, scalars=scalars, attention_mask=mask
-        )
+        # mask = self.build_attention_mask(g)
+        embedded_outputs, _ = self.gatr(embedded_inputs, scalars=scalars)
         output = embedded_outputs[:, 0, :]
         x_cluster_coord = self.clustering(output)
         beta = self.beta(output)
@@ -189,14 +187,19 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         vector = batch_g.ndata["vector"]
         input_ = torch.cat((pos_hits_xyz, hit_type, vector), dim=1)
         model_output = self(batch_g, input_)
-        # dic = {}
-        # batch_g.ndata["model_output"] = model_output
+        dic = {}
+        batch_g.ndata["model_output"] = model_output
+        dic["model_output"] = model_output.detach().cpu()
+        dic["inputs"] = input_.detach().cpu()
         # dic["graph"] = batch_g
         # dic["part_true"] = y
-        # # np.save(self.args.model_prefix + "/graphs/" + str(batch_idx) + "_onnx.npy", dic)
+        np.save(
+            self.args.model_prefix + "/graphs/" + str(batch_idx) + "_onnx_double.npy",
+            dic,
+        )
         # torch.save(
         #     dic,
-        #     self.args.model_prefix + "/graphs_3mu/" + str(batch_idx) + ".pt",
+        #     self.args.model_prefix + "/graphs/" + str(batch_idx) + "_onnx_1.pt",
         # )
 
         (loss, losses) = object_condensation_loss_tracking(
@@ -227,8 +230,6 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
                 path_save=self.args.model_prefix + "showers_df_evaluation",
                 store=True,
                 predict=False,
-                tau=self.args.tau
-
             )
             if self.args.predict:
                 if len(df_batch) > 0:
@@ -263,7 +264,6 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.args.start_lr)
-        
         return {
             "optimizer": optimizer,
             "lr_scheduler": {

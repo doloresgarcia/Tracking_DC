@@ -557,3 +557,9 @@ parser.add_argument(
     action="store_true",
     help="If toggled, uses ground-truth clusters instead of the predicted ones by the model. We can use this to simulate 'ideal' clustering.",
 )
+parser.add_argument(
+    "--tau",
+    action="store_true",
+    default=False,
+    help="using tau mode for predict to store tau variables",
+)

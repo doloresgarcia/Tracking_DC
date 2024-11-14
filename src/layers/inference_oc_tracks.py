@@ -17,6 +17,7 @@ def hfdb_obtain_labels(X, device, eps=0.1):
     hdb = HDBSCAN(min_cluster_size=8, min_samples=8, cluster_selection_epsilon=eps).fit(
         X.detach().cpu()
     )
+    # hdb = DBSCAN(min_samples=10, eps=0.5).fit(X.detach().cpu())
     labels_hdb = hdb.labels_ + 1  # noise class goes to zero
     labels_hdb = np.reshape(labels_hdb, (-1))
     labels_hdb = torch.Tensor(labels_hdb).long().to(device)
@@ -35,6 +36,7 @@ def evaluate_efficiency_tracks(
     predict=False,
     ct=False,
     clustering_mode="dbscan",
+    tau=False
 ):
     number_of_showers_total = 0
     if not ct:
@@ -82,9 +84,9 @@ def evaluate_efficiency_tracks(
                 labels = hfdb_obtain_labels(X, betas.device)
 
         particle_ids = torch.unique(dic["graph"].ndata["particle_number"])
-        print("particle_ids", particle_ids)
+        # print("particle_ids", particle_ids)
         shower_p_unique = torch.unique(labels)
-        print("shower_p_unique", shower_p_unique)
+        # print("shower_p_unique", shower_p_unique)
         (
             shower_p_unique,
             row_ind,
@@ -115,13 +117,14 @@ def evaluate_efficiency_tracks(
                 number_of_showers_total=number_of_showers_total,
                 step=step,
                 number_in_batch=i,
+                tau=tau
             )
             # if len(shower_p_unique) < len(particle_ids):
             # print("storing  event", local_rank, step, i)
             # torch.save(
             #     dic,
             #     path_save
-            #     + "/graphs_all_hdb2/"
+            #     + "/graphs_2810/"
             #     + str(local_rank)
             #     + "_"
             #     + str(step)
@@ -150,7 +153,7 @@ def store_at_batch_end(
     predict=False,
 ):
     path_save_ = (
-        path_save + "/" + str(local_rank) + "_" + str(step) + "_" + str(epoch) + ".pt"
+        path_save + "/" + str(local_rank) + "_" + str(step) + "_" + str(epoch) + "0_0_0_Zjj_4000_5000_v1.pt"
     )
     if predict:
         df_batch = pd.concat(df_batch)
@@ -219,6 +222,7 @@ def generate_showers_data_frame(
     number_of_showers_total=None,
     step=0,
     number_in_batch=0,
+    tau=False
 ):
     # calculate number of unique_hits_per_shower
     unique_hits_per_MC = calculate_number_of_unique_hits_per_particle(
@@ -242,6 +246,13 @@ def generate_showers_data_frame(
         dic["graph"].ndata["particle_number"].long(),
     )
     e_reco_showers = e_reco_showers[1:]
+    
+    if tau:
+        tau_mom_per_particle = scatter_mean(
+            dic["graph"].ndata["tau_mom"].view(-1),
+            dic["graph"].ndata["particle_number"].long(),
+        )
+        tau_mom_per_particle = tau_mom_per_particle[1:]
 
     dic["graph"].ndata["hit_type_0"] = 1 * (dic["graph"].ndata["hit_type"] == 0)
     number_cdc_hits = scatter_add(
@@ -346,7 +357,8 @@ def generate_showers_data_frame(
         ),
         dim=0,
     )
-    # print(e_reco.shape, e_pred.shape, e_pred_t.shape)
+    if tau:
+        tau_mom = torch.cat((tau_mom_per_particle, fake_showers_showers_e_truw), dim=0)
     d = {
         "reco_showers_E": e_reco.detach().cpu(),
         "true_showers_E": e_true.detach().cpu(),
@@ -362,6 +374,9 @@ def generate_showers_data_frame(
         "number_unique_hits": number_uh.detach().cpu(),
         "number_unique_hits_reconstructed": number_uhr.detach().cpu(),
     }
+    
+    if tau:
+        d["tau_mom"]= tau_mom.detach().cpu()
     df = pd.DataFrame(data=d)
     if number_of_showers_total is None:
         return df
@@ -472,9 +487,9 @@ def find_condpoints(betas, unassigned, tbeta):
 
 def obtain_intersection_values(intersection_matrix_w, row_ind, col_ind, particle_ids):
     list_intersection_E = []
-    print(intersection_matrix_w.shape)
-    print(row_ind)
-    print(col_ind)
+    # print(intersection_matrix_w.shape)
+    # print(row_ind)
+    # print(col_ind)
     # intersection_matrix_w = intersection_matrix_w
     if torch.sum(particle_ids == 0) > 0:
         # removing also the MC particle corresponding to noise

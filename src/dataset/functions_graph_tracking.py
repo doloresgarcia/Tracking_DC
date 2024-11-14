@@ -5,28 +5,26 @@ from torch_scatter import scatter_add, scatter_sum, scatter_min, scatter_max
 from sklearn.preprocessing import StandardScaler
 import time
 
+
 # TODO remove the particles with little hits or mark them as noise
 def get_number_hits(part_idx):
     number_of_hits = scatter_sum(torch.ones_like(part_idx), part_idx.long(), dim=0)
     return number_of_hits[1:].view(-1)
 
-
 def find_cluster_id(hit_particle_link):
     unique_list_particles = list(np.unique(hit_particle_link))
-
+    # print("unique_list_particles", unique_list_particles)
     if np.sum(np.array(unique_list_particles) == -1) > 0:
-        non_noise_idx = torch.where(unique_list_particles != -1)[0]
-        noise_idx = torch.where(unique_list_particles == -1)[0]
-        non_noise_particles = unique_list_particles[non_noise_idx]
-        # cluster_id = map(lambda x: non_noise_particles.index(x), hit_particle_link)
-        # cluster_id = torch.Tensor(list(cluster_id)) + 1
-        unique_list_particles1 = torch.tensor(non_noise_particles)
-        cluster_id = torch.searchsorted(
-            unique_list_particles1, hit_particle_link, right=False
+        non_noise_idx = torch.where(hit_particle_link != -1)[0]  #
+        noise_idx = torch.where(hit_particle_link == -1)[0]  #
+        unique_list_particles1 = torch.unique(hit_particle_link)[1:]
+        cluster_id_ = torch.searchsorted(
+            unique_list_particles1, hit_particle_link[non_noise_idx], right=False
         )
-        cluster_id = cluster_id + 1
-        unique_list_particles[non_noise_idx] = cluster_id
-        unique_list_particles[noise_idx] = 0
+        cluster_id_small = 1.0 * cluster_id_ + 1
+        cluster_id = hit_particle_link.clone()
+        cluster_id[non_noise_idx] = cluster_id_small
+        cluster_id[noise_idx] = 0
     else:
         unique_list_particles1 = torch.unique(hit_particle_link)
         cluster_id = torch.searchsorted(
@@ -57,72 +55,91 @@ def fix_splitted_tracks(hit_particle_link, y):
     return hit_particle_link
 
 
-def create_inputs_from_table(output, get_vtx, cld=False):
-
+def create_inputs_from_table(output, get_vtx, cld=False, tau=False):
+    graph_empty = False
     number_hits = np.int32(np.sum(output["pf_mask"][0]))
 
     number_part = np.int32(np.sum(output["pf_mask"][1]))
-    #! idx of particle does not start at 1
-    hit_particle_link = torch.tensor(output["pf_vectoronly"][0, 0:number_hits])
-
-    assert output["pf_vectoronly"].shape[1] > hit_particle_link.shape[0]
-    features_hits = torch.permute(
-        torch.tensor(output["pf_features"][:, 0:number_hits]), (1, 0)
-    )
-    hit_type = features_hits[:, -2].clone()
-    hit_type_one_hot = torch.nn.functional.one_hot(hit_type.long(), num_classes=2)
-    if get_vtx:
-        hit_type_one_hot = hit_type_one_hot
-        features_hits = features_hits
-        hit_particle_link = hit_particle_link
+    #! idx of particle does not start at
+    if tau:
+        hit_particle_link = torch.tensor(output["pf_vectoronly"][0, 0:number_hits])
+        hit_particle_link_tau = torch.tensor(output["pf_vectoronly"][1, 0:number_hits])
     else:
-        mask_DC = hit_type == 0
-        hit_type_one_hot = hit_type_one_hot[mask_DC]
-        features_hits = features_hits[mask_DC]
-        hit_particle_link = hit_particle_link[mask_DC]
-        hit_type = hit_type[mask_DC]
+        hit_particle_link = torch.tensor(output["pf_vectoronly"][0, 0:number_hits])
+        hit_particle_link_tau = None
+    if output["pf_vectoronly"].shape[1] > hit_particle_link.shape[0]:
+        features_hits = torch.permute(
+            torch.tensor(output["pf_features"][:, 0:number_hits]), (1, 0)
+        )
+        hit_type = features_hits[:, -2].clone()
+        hit_type_one_hot = torch.nn.functional.one_hot(hit_type.long(), num_classes=2)
+        if get_vtx:
+            hit_type_one_hot = hit_type_one_hot
+            features_hits = features_hits
+            hit_particle_link = hit_particle_link
+        else:
+            mask_DC = hit_type == 0
+            hit_type_one_hot = hit_type_one_hot[mask_DC]
+            features_hits = features_hits[mask_DC]
+            hit_particle_link = hit_particle_link[mask_DC]
+            hit_type = hit_type[mask_DC]
 
-    unique_list_particles = list(np.unique(hit_particle_link))
-    unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
-    features_particles = torch.permute(
-        torch.tensor(output["pf_vectors"][:, :]),
-        (1, 0),
-    )
-    y_data_graph = features_particles
-    y_id = features_particles[:, 4]
-    mask_particles = check_unique_particles(unique_list_particles, y_id)
+        unique_list_particles = list(np.unique(hit_particle_link))
+        unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
+        features_particles = torch.permute(
+            torch.tensor(output["pf_vectors"][:, :]),
+            (1, 0),
+        )
 
-    y_data_graph = features_particles[mask_particles]
+        y_data_graph = features_particles
+        y_id = features_particles[:, 4]
+        
+        mask_particles = check_unique_particles(unique_list_particles, y_id)
 
-    assert features_particles.shape[0] > torch.sum(mask_particles).item()
-    hit_particle_link = fix_splitted_tracks(hit_particle_link, y_data_graph)
+        y_data_graph = features_particles[mask_particles]
+        if tau:
+            print("y_id", y_id)
+            print("hit_particle_link_tau",torch.unique(hit_particle_link_tau))
+            mask_taus = check_unique_particles(torch.unique(hit_particle_link_tau), y_id)
+            pt_taus = features_particles[mask_taus][:,6]
+            print("pt_taus", pt_taus)
+        else:
+            pt_taus = None
+        if features_particles.shape[0] > torch.sum(mask_particles).item():
+            hit_particle_link = fix_splitted_tracks(hit_particle_link, y_data_graph)
 
-    tic = time.time()
-    cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
-    unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
-    toc = time.time()
-    print("find_cluster_id ", toc - tic)
-    features_particles = torch.permute(
-        torch.tensor(output["pf_vectors"][:, :]),
-        (1, 0),
-    )
+            cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
+            unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
 
-    y_id = features_particles[:, 4]
-    mask_particles = check_unique_particles(unique_list_particles, y_id)
+            features_particles = torch.permute(
+                torch.tensor(output["pf_vectors"][:, :]),
+                (1, 0),
+            )
 
-    y_data_graph = features_particles[mask_particles]
+            y_id = features_particles[:, 4]
+            mask_particles = check_unique_particles(unique_list_particles, y_id)
+            
+            y_data_graph = features_particles[mask_particles]
 
-    assert len(y_data_graph) == len(unique_list_particles)
-
-    result = [
-        y_data_graph,
-        hit_type_one_hot,  # [no_tracks],
-        cluster_id,
-        hit_particle_link,
-        features_hits,
-        hit_type,
-    ]
-    return result
+            assert len(y_data_graph) == len(unique_list_particles)
+        else:
+            graph_empty = True
+    else:
+        graph_empty = True
+    if graph_empty:
+        return [None]
+    else:
+        result = [
+            y_data_graph,
+            hit_type_one_hot,  # [no_tracks],
+            cluster_id,
+            hit_particle_link,
+            features_hits,
+            hit_type,
+            hit_particle_link_tau,
+            pt_taus
+        ]
+        return result
 
 
 def check_unique_particles(unique_list_particles, y_id):
@@ -206,139 +223,189 @@ def create_weights_for_shower_hits(g):
     return g
 
 
-def create_graph_tracking_global(output, get_vtx=False, vector=False):
-    (
-        y_data_graph,
-        hit_type_one_hot,  # [no_tracks],
-        cluster_id,
-        hit_particle_link,
-        features_hits,
-        hit_type,
-    ) = create_inputs_from_table(output, get_vtx)
-    mask_not_loopers, mask_particles = remove_loopers(
-        hit_particle_link, y_data_graph, features_hits[:, 3:6], cluster_id
-    )
-
-    hit_type_one_hot = hit_type_one_hot[mask_not_loopers]
-    cluster_id = cluster_id[mask_not_loopers]
-    hit_particle_link = hit_particle_link[mask_not_loopers]
-    features_hits = features_hits[mask_not_loopers]
-    hit_type = hit_type[mask_not_loopers]
-    y_data_graph = y_data_graph[mask_particles]
-    cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
-    if hit_type_one_hot.shape[0] > 0:
-        graph_empty = False
-        mask_dc = hit_type == 0
-        mask_vtx = hit_type == 1
-        number_of_vtx = torch.sum(mask_vtx)
-        number_of_dc = torch.sum(mask_dc)
-        g = dgl.DGLGraph()
-        if vector:
-            g.add_nodes(number_of_vtx + number_of_dc)
-        else:
-            g.add_nodes(number_of_vtx + number_of_dc * 2)
-
-        left_right_pos = features_hits[:, 3:9][mask_dc]
-        left_post = left_right_pos[:, 0:3]
-        right_post = left_right_pos[:, 3:]
-        vector_like_data = vector
-        if get_vtx:
-            if vector_like_data:
-                particle_number = torch.cat(
-                    (cluster_id[mask_vtx], cluster_id[mask_dc]), dim=0
-                )
-                particle_number_nomap = torch.cat(
-                    (
-                        hit_particle_link[mask_vtx],
-                        hit_particle_link[mask_dc],
-                    ),
-                    dim=0,
-                )
-                pos_xyz = torch.cat((features_hits[:, 0:3][mask_vtx], left_post), dim=0)
-                vector_data = torch.cat(
-                    (0 * features_hits[:, 0:3][mask_vtx], right_post - left_post), dim=0
-                )
-                hit_type_all = torch.cat((hit_type[mask_vtx], hit_type[mask_dc]), dim=0)
-                cellid = torch.cat(
-                    (
-                        features_hits[:, -1][mask_vtx].view(-1, 1),
-                        features_hits[:, -1][mask_dc].view(-1, 1),
-                    ),
-                    dim=0,
-                )
-                # produced_from_secondary_ = torch.cat(
-                #     (
-                #         produced_from_secondary[mask_vtx].view(-1, 1),
-                #         produced_from_secondary[mask_dc].view(-1, 1),
-                #     ),
-                #     dim=0,
-                # )
-                # print(
-                #     features_hits[:, -1][mask_vtx].view(-1, 1).shape,
-                #     features_hits[:, -1][mask_dc].view(-1, 1).shape,
-                # )
-            else:
-                particle_number = torch.cat(
-                    (cluster_id[mask_vtx], cluster_id[mask_dc], cluster_id[mask_dc]),
-                    dim=0,
-                )
-                particle_number_nomap = torch.cat(
-                    (
-                        hit_particle_link[mask_vtx],
-                        hit_particle_link[mask_dc],
-                        hit_particle_link[mask_dc],
-                    ),
-                    dim=0,
-                )
-                pos_xyz = torch.cat(
-                    (features_hits[:, 0:3][mask_vtx], left_post, right_post), dim=0
-                )
-                hit_type_all = torch.cat(
-                    (hit_type[mask_vtx], hit_type[mask_dc], hit_type[mask_dc]), dim=0
-                )
-                cellid = torch.cat(
-                    (
-                        features_hits[:, -1][mask_vtx].view(-1, 1),
-                        features_hits[:, -1][mask_dc].view(-1, 1),
-                        features_hits[:, -1][mask_dc].view(-1, 1),
-                    ),
-                    dim=0,
-                )
-                # print(
-                #     features_hits[:, -1][mask_vtx].view(-1, 1).shape,
-                #     features_hits[:, -1][mask_dc].view(-1, 1).shape,
-                # )
-        else:
-            particle_number = torch.cat((cluster_id, cluster_id), dim=0)
-            particle_number_nomap = torch.cat(
-                (hit_particle_link, hit_particle_link), dim=0
-            )
-            pos_xyz = torch.cat((left_post, right_post), dim=0)
-            hit_type_all = torch.cat((hit_type, hit_type), dim=0)
-        if vector_like_data:
-            g.ndata["vector"] = vector_data
-        g.ndata["hit_type"] = hit_type_all
-        g.ndata["particle_number"] = particle_number
-        g.ndata["particle_number_nomap"] = particle_number_nomap
-        g.ndata["pos_hits_xyz"] = pos_xyz
-        g.ndata["cellid"] = cellid
-        # g.ndata["produced_from_secondary_"] = produced_from_secondary_.view(-1)
-        # g = create_weights_for_shower_hits(g)
-        # uvz = convert_to_conformal_coordinates(pos_xyz)
-        # g.ndata["conformal"] = uvz
-        if len(y_data_graph) < 1:
-            # print(y_data_graph)
-            # print("hit_type", hit_type)
-            # print("GRAPH IS EMPTY", len(y_data_graph))
-            graph_empty = True
-    else:
+def create_graph_tracking_global(output, get_vtx=False, vector=False, tau=False):
+    graph_empty = False
+    result = create_inputs_from_table(output, get_vtx, tau=tau)
+    if len(result) == 1:
         graph_empty = True
+    else:
+        (
+            y_data_graph,
+            hit_type_one_hot,
+            cluster_id,
+            hit_particle_link,
+            features_hits,
+            hit_type,
+            hit_particle_link_tau,
+            pt_taus
+        ) = result
+        # print("hit_type_one_hot previous to removing loopers", hit_type_one_hot.shape, hit_particle_link.shape)
+        mask_not_loopers, mask_particles = remove_loopers(
+            hit_particle_link, y_data_graph, features_hits[:, 3:6], cluster_id
+        )
+
+        hit_type_one_hot = hit_type_one_hot[mask_not_loopers]
+        cluster_id = cluster_id[mask_not_loopers]
+        hit_particle_link = hit_particle_link[mask_not_loopers]
+        if tau:
+            hit_particle_link_tau = hit_particle_link_tau[mask_not_loopers]
+        features_hits = features_hits[mask_not_loopers]
+        hit_type = hit_type[mask_not_loopers]
+        y_data_graph = y_data_graph[mask_particles]
+        cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
+        if hit_type_one_hot.shape[0] > 0:
+            mask_dc = hit_type == 0
+            mask_vtx = hit_type == 1
+            number_of_vtx = torch.sum(mask_vtx)
+            number_of_dc = torch.sum(mask_dc)
+            g = dgl.DGLGraph()
+            if vector:
+                g.add_nodes(number_of_vtx + number_of_dc)
+            else:
+                g.add_nodes(number_of_vtx + number_of_dc * 2)
+
+            left_right_pos = features_hits[:, 3:9][mask_dc]
+            left_post = left_right_pos[:, 0:3]
+            right_post = left_right_pos[:, 3:]
+            vector_like_data = vector
+            if get_vtx:
+                if vector_like_data:
+                    particle_number = torch.cat(
+                        (cluster_id[mask_vtx], cluster_id[mask_dc]), dim=0
+                    )
+                    particle_number_nomap = torch.cat(
+                        (
+                            hit_particle_link[mask_vtx],
+                            hit_particle_link[mask_dc],
+                        ),
+                        dim=0,
+                    )
+                    if tau:
+                        hit_link_tau = torch.cat(
+                            (
+                                hit_particle_link_tau[mask_vtx],
+                                hit_particle_link_tau[mask_dc],
+                            ),
+                            dim=0,
+                        )
+                
+                        cluster_id_tau, _ = find_cluster_id(hit_particle_link_tau)
+                        pt_taus = pt_taus.view(-1)
+                        if torch.sum(cluster_id_tau==0)>0:
+                            pt_taus = torch.cat((torch.Tensor([0]), pt_taus),dim=0)
+                            tau_mom = pt_taus[cluster_id_tau.long()]
+                        else:
+                            tau_mom = pt_taus[cluster_id_tau-1]
+                        tau_mom_all = torch.cat((tau_mom[mask_vtx],tau_mom[mask_dc]), dim=0)
+
+                    pos_xyz = torch.cat(
+                        (features_hits[:, 0:3][mask_vtx], left_post), dim=0
+                    )
+                    vector_data = torch.cat(
+                        (0 * features_hits[:, 0:3][mask_vtx], right_post - left_post),
+                        dim=0,
+                    )
+                    hit_type_all = torch.cat(
+                        (hit_type[mask_vtx], hit_type[mask_dc]), dim=0
+                    )
+                    cellid = torch.cat(
+                        (
+                            features_hits[:, -1][mask_vtx].view(-1, 1),
+                            features_hits[:, -1][mask_dc].view(-1, 1),
+                        ),
+                        dim=0,
+                    )
+                    # produced_from_secondary_ = torch.cat(
+                    #     (
+                    #         produced_from_secondary[mask_vtx].view(-1, 1),
+                    #         produced_from_secondary[mask_dc].view(-1, 1),
+                    #     ),
+                    #     dim=0,
+                    # )
+                    # print(
+                    #     features_hits[:, -1][mask_vtx].view(-1, 1).shape,
+                    #     features_hits[:, -1][mask_dc].view(-1, 1).shape,
+                    # )
+                else:
+                    particle_number = torch.cat(
+                        (
+                            cluster_id[mask_vtx],
+                            cluster_id[mask_dc],
+                            cluster_id[mask_dc],
+                        ),
+                        dim=0,
+                    )
+                    particle_number_nomap = torch.cat(
+                        (
+                            hit_particle_link[mask_vtx],
+                            hit_particle_link[mask_dc],
+                            hit_particle_link[mask_dc],
+                        ),
+                        dim=0,
+                    )
+                    if tau:
+                        hit_link_tau = torch.cat(
+                            (
+                                hit_particle_link_tau[mask_vtx],
+                                hit_particle_link_tau[mask_dc],
+                                hit_particle_link_tau[mask_dc],
+                            ),
+                            dim=0,
+                        )
+                    pos_xyz = torch.cat(
+                        (features_hits[:, 0:3][mask_vtx], left_post, right_post), dim=0
+                    )
+                    hit_type_all = torch.cat(
+                        (hit_type[mask_vtx], hit_type[mask_dc], hit_type[mask_dc]),
+                        dim=0,
+                    )
+                    cellid = torch.cat(
+                        (
+                            features_hits[:, -1][mask_vtx].view(-1, 1),
+                            features_hits[:, -1][mask_dc].view(-1, 1),
+                            features_hits[:, -1][mask_dc].view(-1, 1),
+                        ),
+                        dim=0,
+                    )
+                    # print(
+                    #     features_hits[:, -1][mask_vtx].view(-1, 1).shape,
+                    #     features_hits[:, -1][mask_dc].view(-1, 1).shape,
+                    # )
+            else:
+                particle_number = torch.cat((cluster_id, cluster_id), dim=0)
+                particle_number_nomap = torch.cat(
+                    (hit_particle_link, hit_particle_link), dim=0
+                )
+                pos_xyz = torch.cat((left_post, right_post), dim=0)
+                hit_type_all = torch.cat((hit_type, hit_type), dim=0)
+            if vector_like_data:
+                g.ndata["vector"] = vector_data
+            g.ndata["hit_type"] = hit_type_all
+            g.ndata["particle_number"] = particle_number
+            g.ndata["particle_number_nomap"] = particle_number_nomap
+            if tau:
+                g.ndata["hit_link_tau"] = hit_link_tau
+                g.ndata["tau_mom"] = tau_mom_all
+            g.ndata["pos_hits_xyz"] = pos_xyz
+            g.ndata["cellid"] = cellid
+            g.ndata["unique_id"] = cellid.view(-1)
+            
+            # g.ndata["produced_from_secondary_"] = produced_from_secondary_.view(-1)
+            # g = create_weights_for_shower_hits(g)
+            # uvz = convert_to_conformal_coordinates(pos_xyz)
+            # g.ndata["conformal"] = uvz
+            if len(y_data_graph) < 1:
+                # print("problem here")
+                graph_empty = True
+            if features_hits.shape[0] < 10:
+                graph_empty = True
+        else:
+            # print("hit_type_one_hot", hit_type_one_hot.shape, hit_particle_link.shape)
+            graph_empty = True
+    if graph_empty:
         g = 0
         y_data_graph = 0
-    if features_hits.shape[0] < 10:
-        graph_empty = True
-    toc = time.time()
-
+    # print("graph_empty", graph_empty)
     return [g, y_data_graph], graph_empty
 
 
