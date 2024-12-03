@@ -70,7 +70,7 @@ def create_eff_dic(matched_, log, num_hits_min=0, num_hits_max=5000):
 
 def calculate_eff(sd, log_scale=False):
     if log_scale:
-        bins = np.exp(np.arange(np.log(0.001), np.log(80), 0.5))
+        bins = np.exp(np.arange(np.log(0.001), np.log(80), 0.05))
     else:
         bins = np.arange(0, 51, 2)
     eff = []

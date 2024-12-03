@@ -12,7 +12,7 @@
 
 OUTDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia/
 PFDIR=/afs/cern.ch/work/m/mgarciam/private/Tracking_wcoc/data_creation/
-NEV=100
+NEV=1000
 
 NUM=${1} #random seed
 SAMPLE="Zcard_CLD" #main card
@@ -21,7 +21,7 @@ GUNCARD="config.gun"
 
 WORKDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia/scratch/Zcard_jj_evaluation_v1/${NUM}/
 echo $WORKDIR
-FULLOUTDIR=${OUTDIR}/Zcard_jj_evaluation_v1/
+FULLOUTDIR=${OUTDIR}/Zcard_jj_evaluation_v4/
 PATH_TO_K4GEO="/afs/cern.ch/work/m/mgarciam/private/k4geo_versions/k4geo"
 K4RECTRACKER_dir="/afs/cern.ch/work/m/mgarciam/private/k4RecTracker_dev_0"
 mkdir -p $FULLOUTDIR

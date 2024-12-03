@@ -2,8 +2,7 @@ from typing import Tuple, Union
 import numpy as np
 import torch
 from torch_scatter import scatter_max, scatter_add, scatter_mean
-
-
+import dgl
 def safe_index(arr, index):
     # One-hot index (or zero if it's not in the array)
     if index not in arr:
@@ -460,23 +459,11 @@ def calc_LV_Lbeta(
         L_V_repulsive = L_V_repulsive.view(
             -1
         ) / number_of_repulsive_terms_per_object.view(-1)
+
         V_repulsive2 = q.unsqueeze(1) * q_alpha.unsqueeze(0) * norms_rep2
         L_V_repulsive2 = V_repulsive2.sum(dim=0)  # size number of objects
-
         L_V_repulsive2 = L_V_repulsive2.view(-1)
-        # print("L_V_repulsive", L_V_repulsive)
-        # print("L_V_repulsive2", L_V_repulsive2)
-        # if not tracking:
-        #     #! add to terms function (divide by total number of showers per event)
-        #     # L_V_repulsive = scatter_add(L_V_repulsive, object_index) / n_objects
-        #     per_shower_weight = torch.exp(1 / (e_particles_pred_per_object + 0.4))
-        #     soft_m = torch.nn.Softmax(dim=0)
-        #     per_shower_weight = soft_m(per_shower_weight) * len(L_V_repulsive)
-        #     L_V_repulsive = torch.mean(L_V_repulsive * per_shower_weight)
-        # else:
-        # if tracking:
-        #     L_V_repulsive = torch.mean(L_V_repulsive * per_shower_weight)
-        # else:
+     
         if loss_type == "vrepweighted":
             L_V_repulsive = torch.sum(
                 modified_showers.view(-1) * L_V_repulsive.view(-1)
@@ -485,7 +472,11 @@ def calc_LV_Lbeta(
                 modified_showers.view(-1) * L_V_repulsive2.view(-1)
             ) / len(modified_showers)
         else:
-            L_V_repulsive = torch.mean(L_V_repulsive)
+            # this needs to be done per graph
+            delta_MC = calculate_delta_MC(y, g)
+            weight_track = 1/(delta_MC+0.001)
+            #L_V_repulsive = torch.mean(L_V_repulsive)
+            L_V_repulsive = torch.sum(L_V_repulsive * weight_track.view(-1))/torch.sum(weight_track)
             L_V_repulsive2 = torch.mean(L_V_repulsive2)
     else:
         L_V_repulsive = (
@@ -496,7 +487,7 @@ def calc_LV_Lbeta(
         L_V = attr_weight * L_V_attractive + L_V_repulsive2 / 300
 
     else:
-
+        #L_V = attr_weight * L_V_attractive + L_V_repulsive2 / 30
         L_V = attr_weight * L_V_attractive + repul_weight * L_V_repulsive
 
     n_noise_hits_per_event = scatter_count(batch[is_noise])
@@ -1140,4 +1131,25 @@ def L_clusters_calc(batch, cluster_space_coords, cluster_index, frac_combination
     return L_clusters
 
 
+
+def calculate_delta_MC(y, batch_g):
+    graphs = dgl.unbatch(batch_g)
+    batch_id = y[:, -1].view(-1)
+    df_list = []
+    for i in range(0, len(graphs)):
+        mask = batch_id == i
+        y_i = y[mask]
+        pseudorapidity = -torch.log(torch.tan(y_i[:, 0] / 2))
+        phi = y_i[:, 1]
+        x1 = torch.cat((pseudorapidity.view(-1, 1), phi.view(-1, 1)), dim=1)
+        distance_matrix = torch.cdist(x1, x1, p=2)
+        shape_d = distance_matrix.shape[0]
+        values, _ = torch.sort(distance_matrix, dim=1)
+        if shape_d>1:
+            delta_MC = values[:, 1]
+        else:
+            delta_MC = torch.ones((shape_d,1)).view(-1).to(y_i.device)
+        df_list.append(delta_MC)
+    delta_MC = torch.cat(df_list)
+    return delta_MC
 ## deprecated code:

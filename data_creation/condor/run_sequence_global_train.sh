@@ -15,11 +15,12 @@ PFDIR=/afs/cern.ch/work/m/mgarciam/private/Tracking_wcoc/
 NEV=100
 
 NUM=${1} #random seed
-SAMPLE="Zcard" #main card
+SAMPLE="Zcard_CLD" #main card
 GUNCARD="config.gun"
 
 
-WORKDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia/scratch/${SAMPLE}_fakeCalo/${NUM}/
+WORKDIR=/eos/experiment/fcc/ee/datasets/DC_tracking/Pythia/scratch/plots_for_paper/${NUM}/
+# ${SAMPLE}_fakeCalo/${NUM}/
 echo $WORKDIR
 FULLOUTDIR=${OUTDIR}/${SAMPLE}_fakeCalo
 PATH_TO_K4GEO="/afs/cern.ch/work/m/mgarciam/private/k4geo_versions/k4geo"
@@ -28,7 +29,7 @@ mkdir -p $FULLOUTDIR
 
 mkdir $WORKDIR
 cd $WORKDIR
-if [[ "${SAMPLE}" == "Zcard" ]]
+if [[ "${SAMPLE}" == "Zcard_CLD" ]]
       then 
       cp $PFDIR/Pythia_generation/${SAMPLE}.cmd card.cmd
       echo "Random:seed=${NUM}" >> card.cmd
@@ -62,7 +63,7 @@ fi
 source  /cvmfs/sw-nightlies.hsf.org/key4hep/setup.sh
 # #source /cvmfs/sw.hsf.org/key4hep/setup.sh
 # source /cvmfs/sw-nightlies.hsf.org/key4hep/releases/2024-02-26/x86_64-almalinux9-gcc11.3.1-opt/key4hep-stack/2024-02-26-uj7zqp/setup.sh
-if [[ "${SAMPLE}" == "Zcard" ]]
+if [[ "${SAMPLE}" == "Zcard_CLD" ]]
 then
       k4run $PFDIR/Pythia_generation/pythia.py -n $NEV --Dumper.Filename out.hepmc --Pythia8.PythiaInterface.pythiacard card.cmd
 fi

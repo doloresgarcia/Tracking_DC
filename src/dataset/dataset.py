@@ -294,11 +294,13 @@ class _SimpleIter(object):
         vector = self._data_config.graph_config.get("vector", False)
         CLD = self._data_config.graph_config.get("tracking_CLD", False)
         predict = self._data_config.graph_config.get("predict", False)
+        tau = self._data_config.graph_config.get("tau", False)
+        overlay = self._data_config.graph_config.get("overlay", False)
         if CLD:
-            [g, features_partnn], graph_empty = create_graph_tracking_CLD(X, predict)
+            [g, features_partnn], graph_empty = create_graph_tracking_CLD(X, predict, tau, overlay)
         else:
             [g, features_partnn], graph_empty = create_graph_tracking_global(
-                X, get_vtx, vector
+                X, get_vtx, vector, tau
             )
         return [g, features_partnn], graph_empty
 

@@ -17,16 +17,16 @@ def open_hgcal(path_hgcal, neutrals_only):
     ) as f:
         data = pickle.load(f)
     sd = data["showers_dataframe"]
-    if neutrals_only:
-        sd = pd.concat(
-            [
-                data[data["pid"] == 130],
-                data[data["pid"] == 2112],
-                data[data["pid"] == 22],
-            ]
-        )
-    else:
-        sd = data
+    # if neutrals_only:
+    #     sd = pd.concat(
+    #         [
+    #             data[data["pid"] == 130],
+    #             data[data["pid"] == 2112],
+    #             data[data["pid"] == 22],
+    #         ]
+    #     )
+    # else:
+    sd = data
     matched = sd.dropna()
     ms = data["matched_showers"]
 
@@ -35,16 +35,16 @@ def open_hgcal(path_hgcal, neutrals_only):
 
 def open_mlpf_dataframe(path_mlpf, neutrals_only=False):
     data = pd.read_pickle(path_mlpf)
-    if neutrals_only:
-        sd = pd.concat(
-            [
-                data[data["pid"] == 130],
-                data[data["pid"] == 2112],
-                data[data["pid"] == 211],
-            ]
-        )
-    else:
-        sd = data
+    # if neutrals_only:
+    #     sd = pd.concat(
+    #         [
+    #             data[data["pid"] == 130],
+    #             data[data["pid"] == 2112],
+    #             data[data["pid"] == 211],
+    #         ]
+    #     )
+    # else:
+    sd = data
     mask = (~np.isnan(sd["pred_showers_E"])) * (~np.isnan(sd["reco_showers_E"]))
     matched = sd[mask]
     return sd, matched

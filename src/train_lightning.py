@@ -14,10 +14,9 @@ import wandb
 import warnings
 
 # warnings.filterwarnings("ignore")
-
-from torch import nn
-import torch.nn.functional as F
-from torchvision import transforms
+# from torch import nn
+# import torch.nn.functional as F
+# from torchvision import transforms
 from torchvision.datasets import MNIST
 from torch.utils.data import DataLoader
 import lightning as L
@@ -39,9 +38,9 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.profilers import AdvancedProfiler
 from src.utils.train_utils import get_samples_steps_per_epoch, model_setup, get_gpu_dev
-
+from src.models.Build_graphs import FreezeEFDeepSet
 import os
-
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 # os.environ["TORCH_USE_CUDA_DSA"] = "1"
 # os.environ["TORCH_LOGS"] = "onnx_diagnostics"
@@ -49,6 +48,7 @@ import os
 
 
 def main():
+
     args = parser.parse_args()
     args = get_samples_steps_per_epoch(args)
     args.local_rank = 0
@@ -69,14 +69,13 @@ def main():
         entity=args.wandb_entity,
         name=args.wandb_displayname,
     )
-    print("HEEERE")
     if args.export_onnx:
         print("exporting to onnx")
-        filepath = args.model_prefix + "model_multivector_1_input.onnx"
+        filepath = args.model_prefix + "model_multivector_input_011124_v2.onnx"
         # args1 = (torch.randn((10, 3)), torch.randn((10, 1)), torch.randn((10, 3)))
         torch._dynamo.config.verbose = True
         if args.load_model_weights is not None:
-            from src.models.Gatr_v import ExampleWrapper
+            from src.models.Gatr_v_onnx import ExampleWrapper
 
             print("adding weights")
             model = ExampleWrapper.load_from_checkpoint(
@@ -84,46 +83,42 @@ def main():
             )
         model.eval()
         model.ScaledGooeyBatchNorm2_1.momentum = 0
-        # dic = torch.load(
-        #     "/eos/user/m/mgarciam/EVAL_REPOS/Tracking_wcoc/models/test/showers_df_evaluation/graphs_all_hdb1/0_0_0.pt",
-        #     map_location="cpu",
-        # )
-        # pos_hits_xyz = dic["graph"].ndata["pos_hits_xyz"]
-        # hit_type = dic["graph"].ndata["hit_type"].view(-1, 1)
-        # vector = dic["graph"].ndata["vector"]
-        # args1 = (pos_hits_xyz, hit_type, vector)
-        # args1 = (torch.randn((10, 3)), torch.randn((10, 1)), torch.randn((10, 3)))
         args1 = torch.randn((10, 7))
-        # args1 = (torch.zeros((10, 3)), torch.zeros((10, 1)), torch.zeros((10, 3)))
-        export_options = torch.onnx.ExportOptions(dynamic_shapes=True)
-        # onnx_program = torch.onnx.export(  # dynamo_
-        #     model,
-        #     args1,
-        #     filepath,
-        #     # export_options=export_options,
-        #     opset_version=18,
-        #     input_names=["input"],
-        #     output_names=["output"],
-        #     dynamic_axes={
-        #         "input": [0],
-        #         "output": [0],
-        #     },
+        torch.onnx.export(model, 
+                        args1,
+                        filepath, 
+                        dynamo=True, 
+                        # report=True, 
+                        # verify=True,       
+                        input_names=["input"],
+                        output_names=["output"], 
+                         dynamic_axes={
+                            "input": [0]}) 
+
+
+
+        
+        # export_options = torch.onnx.ExportOptions(dynamic_shapes=True)
+        # onnx_program = torch.onnx.dynamo_export(
+        #     model, args1, export_options=export_options
         # )
-        onnx_program = torch.onnx.dynamo_export(
-            model, args1, export_options=export_options
-        )
-        onnx_program.save(filepath)
-        # input_sample = torch.randn((10, 7))
-        # model.to_onnx(filepath, input_sample, export_params=True, verbose=True)
+        # onnx_program.save(filepath)
+       
 
     elif training_mode:
         print("USING TRAINING MODE")
-        if args.load_model_weights is not None:
-            from src.models.Gatr_v import ExampleWrapper
+        # if args.load_model_weights is not None:
+        #     # from src.models.Gatr_v import ExampleWrapper
 
-            model = ExampleWrapper.load_from_checkpoint(
-                args.load_model_weights, args=args, dev=0
-            )
+        #     # model = ExampleWrapper.load_from_checkpoint(
+        #     #     args.load_model_weights, args=args, dev=0
+        #     # )
+        #     from src.models.Edge_filtering import EFDeepSet
+        #     EFDeepSet_model = EFDeepSet.load_from_checkpoint(
+        #         "/eos/user/m/mgarciam/EVAL_REPOS/Tracking_CLD/models/baseline_gnn/edge_filtering_v1_geo_cuts/_epoch=6_step=25000.ckpt", args=args,
+        #         dev=0, strict=False, map_location=torch.device("cuda:0"))  # Load the good clustering
+        #     model.EFDeepSet.fcnn = EFDeepSet_model.fcnn
+
         checkpoint_callback = ModelCheckpoint(
             dirpath=args.model_prefix,  # checkpoints_path, # <--- specify this on the trainer itself for version control
             filename="_{epoch}_{step}",
@@ -131,25 +126,29 @@ def main():
             save_top_k=-1,  # <--- this is important!
             save_weights_only=True,
         )
+        
         lr_monitor = LearningRateMonitor(logging_interval="epoch")
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
             checkpoint_callback,
             lr_monitor,
         ]
+        # only needed for the GNN baseline
+        # callbacks.append(FreezeEFDeepSet())
         trainer = L.Trainer(
             callbacks=callbacks,
             accelerator="gpu",
-            devices=[0, 1, 2, 3],
+            devices=[1,2],
             default_root_dir=args.model_prefix,
             logger=wandb_logger,
             # max_epochs=5,
-            # strategy="ddp",
+            strategy="ddp",
             # limit_train_batches=20,
-            limit_train_batches=5000,
+            # limit_train_batches=890,
             limit_val_batches=5,
         )
         args.local_rank = trainer.global_rank
+        print("here")
         train_loader, val_loader, data_config, train_input_names = train_load(args)
 
         trainer.fit(

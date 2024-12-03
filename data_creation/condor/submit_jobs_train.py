@@ -57,7 +57,7 @@ def main():
     for name in glob.glob("{}/*.root".format(outdir)):
         list_of_outfiles.append(name)
 
-    script = "run_sequence_global_1.sh"
+    script = "run_sequence_global_Z.sh"
 
     jobCount = 0
 
@@ -77,25 +77,25 @@ log                   = std/condor.$(ClusterId).log
 
     print(njobs)
     for job in range(njobs):
+        if job>13000:
+            seed = str(job + 1)
+            basename = "reco_Zcard_tau_CLD_" + seed + "_mc2.root"
+            outputFile = outdir + "/" + basename
 
-        seed = str(job + 1)
-        basename = "reco_gun_" + seed + ".root"
-        outputFile = outdir + "/" + basename
+            # print outdir, basename, outputFile
+            if not outputFile in list_of_outfiles:
+                print("{} : missing output file ".format(outputFile))
+                jobCount += 1
 
-        # print outdir, basename, outputFile
-        if not outputFile in list_of_outfiles:
-            print("{} : missing output file ".format(outputFile))
-            jobCount += 1
+                argts = "{}".format(seed)
 
-            argts = "{}".format(seed)
+                cmdfile += 'arguments="{}"\n'.format(argts)
+                cmdfile += "queue\n"
 
-            cmdfile += 'arguments="{}"\n'.format(argts)
-            cmdfile += "queue\n"
-
-            cmd = "rm -rf job*; ./{} {}".format(script, argts)
-            if jobCount == 1:
-                print("")
-                print(cmd)
+                cmd = "rm -rf job*; ./{} {}".format(script, argts)
+                if jobCount == 1:
+                    print("")
+                    print(cmd)
 
     with open("condor_gun.sub", "w") as f:
         f.write(cmdfile)
