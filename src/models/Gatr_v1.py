@@ -1,11 +1,6 @@
 from os import path
 import sys
-
 from gatr import GATr, SelfAttentionConfig, MLPConfig
-
-# from src.gatr.nets.gatr import GATr
-# from src.gatr.layers.attention.config import SelfAttentionConfig
-# from src.gatr.layers.mlp.config import MLPConfig
 from gatr.interface import (
     embed_point,
     extract_scalar,
@@ -32,11 +27,11 @@ from src.layers.inference_oc_tracks import (
 from src.layers.losses import object_condensation_loss_tracking
 from src.layers.batch_operations import obtain_batch_numbers
 
-from xformers.ops.fmha import BlockDiagonalMask
+# from xformers.ops.fmha import BlockDiagonalMask
 import os
 import wandb
-from src.gatr.primitives.linear import _compute_pin_equi_linear_basis
-from src.gatr.primitives.attention import _build_dist_basis
+from gatr.primitives.linear import _compute_pin_equi_linear_basis
+from gatr.primitives.attention import _build_dist_basis
 
 
 class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
@@ -56,9 +51,6 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         self.pin_basis = None
         self.basis_q = None
         self.basis_k = None
-        self.ScaledGooeyBatchNorm2_1 = nn.BatchNorm1d(self.input_dim, momentum=0.1)
-
-        self.load_basis()
         self.gatr = GATr(
             in_mv_channels=1,
             out_mv_channels=1,
@@ -75,68 +67,62 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
             # basis_q=self.basis_q,
             # basis_k=self.basis_k,
         )
-
+        self.ScaledGooeyBatchNorm2_1 = nn.BatchNorm1d(self.input_dim, momentum=0.1)
         self.clustering = nn.Linear(16, self.output_dim - 1, bias=False)
         self.beta = nn.Linear(16, 1)
         self.vector_like_data = True
 
-    def load_basis(self):
+    # def load_basis(self):
 
-        filename = "/afs/cern.ch/user/m/mgarciam/.local/lib/python3.8/site-packages/gatr/primitives/data/geometric_product.pt"
-        sparse_basis = torch.load(filename).to(torch.float32)
-        basis = sparse_basis.to_dense()
-        self.basis_gp = basis.to(device="cuda")
-        filename = "/afs/cern.ch/user/m/mgarciam/.local/lib/python3.8/site-packages/gatr/primitives/data/outer_product.pt"
-        sparse_basis_outer = torch.load(filename).to(torch.float32)
-        sparse_basis_outer = sparse_basis_outer.to_dense()
-        self.basis_outer = sparse_basis_outer.to(device="cuda")
+    #     filename = "/afs/cern.ch/user/m/mgarciam/.local/lib/python3.8/site-packages/gatr/primitives/data/geometric_product.pt"
+    #     sparse_basis = torch.load(filename).to(torch.float32)
+    #     basis = sparse_basis.to_dense()
+    #     self.basis_gp = basis
+    #     filename = "/afs/cern.ch/user/m/mgarciam/.local/lib/python3.8/site-packages/gatr/primitives/data/outer_product.pt"
+    #     sparse_basis_outer = torch.load(filename).to(torch.float32)
+    #     sparse_basis_outer = sparse_basis_outer.to_dense()
+    #     self.basis_outer = sparse_basis_outer
 
-        self.pin_basis = _compute_pin_equi_linear_basis(
-            device=self.basis_gp.device, dtype=basis.dtype
-        )
-        self.basis_q, self.basis_k = _build_dist_basis(
-            device=self.basis_gp.device, dtype=basis.dtype
-        )
+    #     self.pin_basis = _compute_pin_equi_linear_basis(
+    #         device=basis.device, dtype=basis.dtype
+    #     )
+    #     self.basis_q, self.basis_k = _build_dist_basis(
+    #         device=basis.device, dtype=basis.dtype
+    #     )
 
-    def forward(self, g, input):  #
-        # print("forward")
-        pos_hits_xyz = input[:, 0:3]
-        hit_type = input[:, 3].view(-1, 1)
-        vector = input[:, 4:]
+    def forward(self, pos_hits_xyz, hit_type, vector, g):
         inputs = self.ScaledGooeyBatchNorm2_1(pos_hits_xyz)
         velocities = embed_translation(vector)
         embedded_inputs = embed_point(inputs) + embed_scalar(hit_type) + velocities
         embedded_inputs = embedded_inputs.unsqueeze(-2)
         scalars = torch.zeros((inputs.shape[0], 1))
-        mask = self.build_attention_mask(g)
-        embedded_outputs, _ = self.gatr(
-            embedded_inputs, scalars=scalars, attention_mask=mask
-        )
+        # mask = self.build_attention_mask(g)
+        embedded_outputs, _ = self.gatr(embedded_inputs, scalars=scalars)
+        embedded_outputs, _ = self.gatr(embedded_inputs, scalars=scalars)
         output = embedded_outputs[:, 0, :]
         x_cluster_coord = self.clustering(output)
         beta = self.beta(output)
         x = torch.cat((x_cluster_coord, beta), dim=1)
-
         return x
 
-    def build_attention_mask(self, g):
-        """Construct attention mask from pytorch geometric batch.
+    # def build_attention_mask(self, g):
+    #     """Construct attention mask from pytorch geometric batch.
 
-        Parameters
-        ----------
-        inputs : torch_geometric.data.Batch
-            Data batch.
+    #     Parameters
+    #     ----------
+    #     inputs : torch_geometric.data.Batch
+    #         Data batch.
 
-        Returns
-        -------
-        attention_mask : xformers.ops.fmha.BlockDiagonalMask
-            Block-diagonal attention mask: within each sample, each token can attend to each other
-            token.
-        """
-        batch_numbers = obtain_batch_numbers(g)
-        return BlockDiagonalMask.from_seqlens(
-            torch.bincount(batch_numbers.long()).tolist()
-        )
+    #     Returns
+    #     -------
+    #     attention_mask : xformers.ops.fmha.BlockDiagonalMask
+    #         Block-diagonal attention mask: within each sample, each token can attend to each other
+    #         token.
+    #     """
+    #     batch_numbers = obtain_batch_numbers(g)
+    #     return BlockDiagonalMask.from_seqlens(
+    #         torch.bincount(batch_numbers.long()).tolist()
+    #     )
 
     def training_step(self, batch, batch_idx):
         y = batch[1]
@@ -145,8 +131,8 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         pos_hits_xyz = batch_g.ndata["pos_hits_xyz"]
         hit_type = batch_g.ndata["hit_type"].view(-1, 1)
         vector = batch_g.ndata["vector"]
-        input_ = torch.cat((pos_hits_xyz, hit_type, vector), dim=1)
-        model_output = self(batch_g, input_)
+
+        model_output = self(pos_hits_xyz, hit_type, vector)
 
         (loss, losses) = object_condensation_loss_tracking(
             batch_g,
@@ -163,19 +149,10 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
             use_average_cc_pos=self.args.use_average_cc_pos,
             tracking=True,
         )
-        if self.trainer.is_global_zero:
-            log_losses_wandb_tracking(True, batch_idx, 0, losses, loss)
+        # if self.trainer.is_global_zero:
+        #     log_losses_wandb_tracking(True, batch_idx, 0, losses, loss)
 
         # self.loss_final = loss.item()
-        # dic = {}
-        # batch_g.ndata["model_output"] = model_output
-        # dic["graph"] = batch_g
-        # dic["part_true"] = y
-
-        # torch.save(
-        #     dic,
-        #     self.args.model_prefix + "/graphs/" + str(batch_idx) + ".pt",
-        # )
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -187,36 +164,23 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         pos_hits_xyz = batch_g.ndata["pos_hits_xyz"]
         hit_type = batch_g.ndata["hit_type"].view(-1, 1)
         vector = batch_g.ndata["vector"]
-        input_ = torch.cat((pos_hits_xyz, hit_type, vector), dim=1)
-        model_output = self(batch_g, input_)
-        dic = {}
-        batch_g.ndata["model_output"] = model_output
-        dic["graph"] = batch_g
-        dic["part_true"] = y
-        # np.save(self.args.model_prefix + "/graphs/" + str(batch_idx) + "_onnx.npy", dic)
-        # torch.save(
-        #     dic,
-        #     self.args.model_prefix + "/graphs/" + str(batch_idx) + ".pt",
+
+        model_output = self(pos_hits_xyz, hit_type, vector, batch_g)
+
+        # (loss, losses) = object_condensation_loss_tracking(
+        #     batch_g,
+        #     model_output,
+        #     y,
+        #     q_min=self.args.qmin,
+        #     frac_clustering_loss=0,
+        #     clust_loss_only=self.args.clustering_loss_only,
+        #     use_average_cc_pos=self.args.use_average_cc_pos,
+        #     tracking=True,
         # )
 
-        (loss, losses) = object_condensation_loss_tracking(
-            batch_g,
-            model_output,
-            y,
-            clust_loss_only=True,
-            add_energy_loss=False,
-            calc_e_frac_loss=False,
-            q_min=self.args.qmin,
-            frac_clustering_loss=self.args.frac_cluster_loss,
-            attr_weight=self.args.L_attractive_weight,
-            repul_weight=self.args.L_repulsive_weight,
-            fill_loss_weight=self.args.fill_loss_weight,
-            use_average_cc_pos=self.args.use_average_cc_pos,
-            tracking=True,
-        )
+        # if self.trainer.is_global_zero:
+        #     log_losses_wandb_tracking(True, batch_idx, 0, losses, loss, val=True)
         if self.trainer.is_global_zero:
-            log_losses_wandb_tracking(True, batch_idx, 0, losses, loss, val=True)
-        if self.trainer.is_global_zero and self.args.predict:
             df_batch = evaluate_efficiency_tracks(
                 batch_g,
                 model_output,
@@ -227,12 +191,10 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
                 path_save=self.args.model_prefix + "showers_df_evaluation",
                 store=True,
                 predict=False,
-                tau=self.args.tau
-
             )
-            if self.args.predict:
-                if len(df_batch) > 0:
-                    self.df_showers.append(df_batch)
+            # if self.args.predict:
+            #     if len(df_batch) > 0:
+            #         self.df_showers.append(df_batch)
 
     # def on_train_epoch_end(self):
     # self.log("train_loss_epoch", self.loss_final)
@@ -250,20 +212,19 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         if self.current_epoch > 2 or self.args.predict:
             self.ScaledGooeyBatchNorm2_1.momentum = 0
 
-    def on_validation_epoch_end(self):
-        if self.args.predict:
-            store_at_batch_end(
-                self.args.model_prefix + "showers_df_evaluation",
-                self.df_showers,
-                0,
-                0,
-                0,
-                predict=True,
-            )
+    # def on_validation_epoch_end(self):
+    #     if self.args.predict:
+    #         store_at_batch_end(
+    #             self.args.model_prefix + "showers_df_evaluation",
+    #             self.df_showers,
+    #             0,
+    #             0,
+    #             0,
+    #             predict=True,
+    #         )
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.args.start_lr)
-        
         return {
             "optimizer": optimizer,
             "lr_scheduler": {

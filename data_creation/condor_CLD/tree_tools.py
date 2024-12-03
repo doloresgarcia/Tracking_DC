@@ -6,6 +6,8 @@ from ROOT import TFile, TTree
 import numpy as np
 from podio import root_io
 import edm4hep
+import dd4hep as dd4hepModule
+from ROOT import dd4hep
 
 c_light = 2.99792458e8
 Bz_clic = 4.0
@@ -167,15 +169,9 @@ def find_pandora_pfo_track(hit_index, hit_collection, pfo_collection):
 
 
 def get_genparticle_parents(i, mcparts):
-
     p = mcparts[i]
     parents = p.getParents()
-    # print(p.parents_begin(), p.parents_end())
     parent_positions = []
-    # for j in range(p.parents_begin(), p.parents_end()):
-    #     # print(j, daughters[j].index)
-    #     parent_positions.append(parents[j].index)
-    #     # break
     for parent in parents:
         parent_positions.append(parent.getObjectID().index)
 
@@ -200,6 +196,36 @@ def find_mother_particle(j, gen_part_coll):
     # if j != pp_old:
     #     print("old parent and new parent", j, pp_old)
     return pp_old
+
+
+def find_mother_particle_check_tau(j, gen_part_coll, tau_index0, tau_index1):
+    parent_p = j
+    counter = 0
+    belongs_to_tau1 = False
+    belongs_to_tau2 = False
+    while len(np.reshape(np.array(parent_p), -1)) < 1.5:
+        if type(parent_p) == list:
+            if len(parent_p) > 0:
+                parent_p = parent_p[0]
+            else:
+                break
+        parent_p_r = get_genparticle_parents(
+            parent_p,
+            gen_part_coll,
+        )
+        if len(parent_p_r) == 0:
+            break
+        if parent_p_r[0] == tau_index0:
+            belongs_to_tau1 = True
+        if parent_p_r[0] == tau_index1:
+            belongs_to_tau2 = True
+        pp_old = parent_p
+        counter = counter + 1
+        parent_p = parent_p_r
+        if belongs_to_tau1 or belongs_to_tau2:
+            break
+
+    return pp_old, belongs_to_tau1, belongs_to_tau2
 
 
 def find_gen_link(
@@ -242,10 +268,10 @@ def find_gen_link(
     return indices, gen_weights
 
 
-def find_gen_link_track(j, id, SiTracksMCTruthLink, simcollection):
-    # print("start", j, id)
+def find_gen_link_track(
+    j, id, SiTracksMCTruthLink, simcollection, gen_part_coll, store_taus, index_taus
+):
     gen_positions = []
-    # gen_weights = []
     for i, l in enumerate(SiTracksMCTruthLink):
         rec_ = l.getRec()
         object_id = rec_.getObjectID()
@@ -259,28 +285,35 @@ def find_gen_link_track(j, id, SiTracksMCTruthLink, simcollection):
                 l.getSim().getObjectID().collectionID
                 == simcollection[index_take].getObjectID().collectionID
             ):
-                # print(dir(simcollection[index_take]))
-                gen_positions.append(
+                index_mc_particle = (
                     simcollection[index_take].getMCParticle().getObjectID().index
                 )
-                if simcollection[index_take].getMCParticle().getObjectID().index > 1000:
-                    print(simcollection[index_take].getMCParticle().getObjectID().index)
-                break
-            # weight = l.getWeight()
-            # gen_weights.append(weight)
+                gen_positions.append(index_mc_particle)
+                if store_taus == "True":
+                    p, belongs_to_tau_1, belongs_to_tau_2 = (
+                        find_mother_particle_check_tau(
+                            index_mc_particle,
+                            gen_part_coll,
+                            index_taus[0],
+                            index_taus[1],
+                        )
+                        )
+                    if belongs_to_tau_1:
+                        index_tau = index_taus[0]
+                    elif belongs_to_tau_2:
+                        index_tau = index_taus[1]
+                    else:
+                        index_tau = -1
+                    # find mother to find tau
 
-    # indices = []
-    # for i, pos in enumerate(gen_positions):
-    #     if pos in genpart_indexes:
-    #         indices.append(genpart_indexes[pos])
-
-    # indices += [-1] * (5 - len(indices))
-    # gen_weights += [-1] * (5 - len(gen_weights))
-
-    return gen_positions
+                    break
+    if store_taus == "True":
+        return gen_positions, index_tau
+    else:
+        return gen_positions, 0
 
 
-def initialize(t):
+def initialize(t, store_tau):
     event_number = array("i", [0])
     n_hit = array("i", [0])
     n_part = array("i", [0])
@@ -288,12 +321,16 @@ def initialize(t):
     hit_x = ROOT.std.vector("float")()
     hit_y = ROOT.std.vector("float")()
     hit_z = ROOT.std.vector("float")()
+    unique_id = ROOT.std.vector("float")()
 
     ### store here whether track: 0 /ecal: 1/hcal: 2
     calohit_col = ROOT.std.vector("int")()
 
     ### store here the position of the corresponding gen particles associated to the hit
     hit_genlink = ROOT.std.vector("float")()
+    if store_tau == "True":
+        hit_genlink_tau = ROOT.std.vector("float")()
+        t.Branch("hit_genlink_tau", hit_genlink_tau)
     pandora_track_index = ROOT.std.vector("float")()
 
     ## store here true information
@@ -333,7 +370,7 @@ def initialize(t):
     t.Branch("part_pid", part_pid)
     t.Branch("part_isDecayedInCalorimeter", part_isDecayedInCalorimeter)
     t.Branch("part_isDecayedInTracker", part_isDecayedInTracker)
-
+    t.Branch("unique_id", unique_id)
     dic = {
         "hit_x": hit_x,
         "hit_y": hit_y,
@@ -341,6 +378,7 @@ def initialize(t):
         "calohit_col": calohit_col,
         "hit_genlink": hit_genlink,
         "pandora_track_index": pandora_track_index,
+        "unique_id": unique_id,
         # "hit_pandora_cluster_energy": hit_pandora_cluster_energy,
         # "hit_pandora_pfo_energy": hit_pandora_pfo_energy,
         "part_p": part_p,
@@ -355,6 +393,8 @@ def initialize(t):
         "part_isDecayedInCalorimeter": part_isDecayedInCalorimeter,
         "part_isDecayedInTracker": part_isDecayedInTracker,
     }
+    if store_tau == "True":
+        dic["hit_genlink_tau"] = hit_genlink_tau
     return (event_number, n_hit, n_part, dic, t)
 
 
@@ -364,7 +404,11 @@ def clear_dic(dic):
     return dic
 
 
-def gen_particles_find(event, debug):
+def gen_particles_find(event, debug, store_tau="False"):
+
+    index_of_Z = 0
+    index_of_tau1 = 0
+    index_of_tau2 = 0
     genparts = "MCParticles"
     genparts_parents = "_MCParticles_parents"
     genparts_daughters = "_MCParticles_daughters"
@@ -389,6 +433,17 @@ def gen_particles_find(event, debug):
                 total_e = total_e + p
         theta = math.acos(momentum.z / p)
         phi = math.atan2(momentum.y, momentum.x)
+
+        if store_tau == "True":
+            if part.getPDG() == 23:
+                daughters = get_genparticle_daughters(
+                    j,
+                    gen_part_coll,
+                )
+                if len(daughters) == 2:
+                    index_of_Z = j
+                    index_of_tau1 = daughters[0]
+                    index_of_tau2 = daughters[1]
         if debug:
             print(
                 "all genparts: N: {}, PID: {}, Q: {}, P: {:.2e}, Theta: {:.2e}, Phi: {:.2e}, M: {:.2e}, X(m): {:.3f}, Y(m): {:.3f}, R(m): {:.3f}, Z(m): {:.3f}, status: {}, parents: {}, daughters: {}, decayed_traacker: {}".format(
@@ -455,6 +510,7 @@ def gen_particles_find(event, debug):
         total_e,
         e_pp,
         gen_part_coll,
+        [index_of_tau1, index_of_tau2],
     )
 
 
@@ -786,7 +842,9 @@ def store_track_hits(
     gen_part_coll,
     number_of_hist_with_no_genlinks,
     store_pandora_hits,
-    CLIC,
+    metadata,
+    index_taus,
+    store_tau="False",
 ):
     ## calo stuff
     # "VXDTrackerHits", "VXDEndcapTrackerHits", "ITrackerHits", "OTrackerHits", "ITrackerEndcapHits", "OTrackerEndcapHits"
@@ -837,13 +895,34 @@ def store_track_hits(
         i_endcap_relation,
         o_endcap_relation,
     ]
-
+    print(metadata.parameters)
+    names_of_encoders = [
+        "VertexBarrelCollection__CellIDEncoding",
+        "VertexEndcapCollection__CellIDEncoding",
+        "InnerTrackerBarrelCollection__CellIDEncoding",
+        "OuterTrackerBarrelCollection__CellIDEncoding",
+        "InnerTrackerEndcapCollection__CellIDEncoding",
+        "OuterTrackerBarrelCollection__CellIDEncoding",
+    ]
     for calohit_col_index, calohit_coll in enumerate(calohit_collections):
         relation_collection = event.get(calohit_collections_relation[calohit_col_index])
         sim_collection = event.get(calohit_collections_sim[calohit_col_index])
+        cellid_encoding = metadata.get_parameter(names_of_encoders[calohit_col_index])
+        decoder = dd4hep.BitFieldCoder(cellid_encoding)
         if debug:
             print("")
         for j, calohit in enumerate(event.get(calohit_coll)):
+            cellID = calohit.getCellID()
+
+            # print(decoder.fieldDescription)
+            # subdet = decoder.get(cellID, "subdet")
+            side = decoder.get(cellID, "side")
+            layer = decoder.get(cellID, "layer")
+            id = (
+                ((calohit_col_index & 0xFF) << 16)
+                + ((side & 0xFF) << 8)
+                + (layer & 0xFF)
+            )
 
             position = calohit.getPosition()
             x = position.x
@@ -852,15 +931,24 @@ def store_track_hits(
             # R = math.sqrt(x**2 + y**2)
             # r = math.sqrt(x**2 + y**2 + z**2)
             hit_collection = calohit.getObjectID().collectionID
-
+            dic["unique_id"].push_back(id)
             dic["hit_x"].push_back(x)
             dic["hit_y"].push_back(y)
             dic["hit_z"].push_back(z)
             dic["calohit_col"].push_back(calohit_col_index + 1)
 
-            gen_positions = find_gen_link_track(
-                j, hit_collection, relation_collection, sim_collection
+            gen_positions, index_tau = find_gen_link_track(
+                j,
+                hit_collection,
+                relation_collection,
+                sim_collection,
+                gen_part_coll=gen_part_coll,
+                store_taus=store_tau,
+                index_taus=index_taus,
             )
+
+            if store_tau == "True":
+                dic["hit_genlink_tau"].push_back(index_tau)
 
             dic["hit_genlink"].push_back(gen_positions[0])
 

@@ -3,16 +3,17 @@ import sys
 
 # from gatr import GATr, SelfAttentionConfig, MLPConfig
 
-from src.gatr.nets.gatr import GATr
-from src.gatr.layers.attention.config import SelfAttentionConfig
-from src.gatr.layers.mlp.config import MLPConfig
-from gatr.interface import (
+from src.gatr_v111.nets.gatr import GATr
+from src.gatr_v111.layers.attention.config import SelfAttentionConfig
+from src.gatr_v111.layers.mlp.config import MLPConfig
+from src.gatr_v111.interface import (
     embed_point,
     extract_scalar,
     extract_point,
     embed_scalar,
     embed_translation,
 )
+from src.gatr_v111.primitives.invariants import   compute_inner_product_mask
 import torch
 import torch.nn as nn
 from src.logger.plotting_tools import PlotCoordinates
@@ -35,8 +36,8 @@ from src.layers.batch_operations import obtain_batch_numbers
 from xformers.ops.fmha import BlockDiagonalMask
 import os
 import wandb
-from src.gatr.primitives.linear import _compute_pin_equi_linear_basis
-from src.gatr.primitives.attention import _build_dist_basis
+from src.gatr_v111.primitives.linear import _compute_pin_equi_linear_basis
+from src.gatr_v111.primitives.attention import _build_dist_basis
 
 
 class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
@@ -74,6 +75,7 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
             basis_pin=self.pin_basis,
             basis_q=self.basis_q,
             basis_k=self.basis_k,
+            basis_gp_mask = self.basis_gp_mask, 
         )
 
         self.clustering = nn.Linear(16, self.output_dim - 1, bias=False)
@@ -85,11 +87,11 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         filename = "/afs/cern.ch/user/m/mgarciam/.local/lib/python3.8/site-packages/gatr/primitives/data/geometric_product.pt"
         sparse_basis = torch.load(filename).to(torch.float32)
         basis = sparse_basis.to_dense()
-        self.basis_gp = basis.to(device="cuda")
+        self.basis_gp = basis #.to(device="cuda")
         filename = "/afs/cern.ch/user/m/mgarciam/.local/lib/python3.8/site-packages/gatr/primitives/data/outer_product.pt"
         sparse_basis_outer = torch.load(filename).to(torch.float32)
         sparse_basis_outer = sparse_basis_outer.to_dense()
-        self.basis_outer = sparse_basis_outer.to(device="cuda")
+        self.basis_outer = sparse_basis_outer #.to(device="cuda")
 
         self.pin_basis = _compute_pin_equi_linear_basis(
             device=self.basis_gp.device, dtype=basis.dtype
@@ -97,8 +99,12 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         self.basis_q, self.basis_k = _build_dist_basis(
             device=self.basis_gp.device, dtype=basis.dtype
         )
+        mask = compute_inner_product_mask(self.basis_gp, device=self.basis_gp.device)
+        columns = torch.range(0,15).to(self.basis_gp.device)
+        colums_take = columns[mask.bool()]
+        self.basis_gp_mask = colums_take
 
-    def forward(self, g, input):  #
+    def forward(self,  input):  #
         # print("forward")
         pos_hits_xyz = input[:, 0:3]
         hit_type = input[:, 3].view(-1, 1)
@@ -144,7 +150,7 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         hit_type = batch_g.ndata["hit_type"].view(-1, 1)
         vector = batch_g.ndata["vector"]
         input_ = torch.cat((pos_hits_xyz, hit_type, vector), dim=1)
-        model_output = self(batch_g, input_)
+        model_output = self(input_)
 
         (loss, losses) = object_condensation_loss_tracking(
             batch_g,
@@ -186,20 +192,20 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         hit_type = batch_g.ndata["hit_type"].view(-1, 1)
         vector = batch_g.ndata["vector"]
         input_ = torch.cat((pos_hits_xyz, hit_type, vector), dim=1)
-        model_output = self(batch_g, input_)
+        model_output = self(input_)
         dic = {}
         batch_g.ndata["model_output"] = model_output
-        dic["model_output"] = model_output.detach().cpu()
-        dic["inputs"] = input_.detach().cpu()
+        # dic["model_output"] = model_output.detach().cpu()
+        # dic["inputs"] = input_.detach().cpu()
         # dic["graph"] = batch_g
         # dic["part_true"] = y
-        np.save(
-            self.args.model_prefix + "/graphs/" + str(batch_idx) + "_onnx_double.npy",
-            dic,
-        )
+        # np.save(
+        #     self.args.model_prefix + "/graphs_011123_onnx/" + str(batch_idx) + ".npy",
+        #     dic,
+        # )
         # torch.save(
         #     dic,
-        #     self.args.model_prefix + "/graphs/" + str(batch_idx) + "_onnx_1.pt",
+        #     self.args.model_prefix + "/graphs_011123_onnx/" + str(batch_idx) + ".pt",
         # )
 
         (loss, losses) = object_condensation_loss_tracking(

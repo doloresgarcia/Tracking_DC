@@ -14,10 +14,13 @@ from sklearn.cluster import DBSCAN, HDBSCAN
 
 def hfdb_obtain_labels(X, device, eps=0.1):
     # hdbscan gives -1 if noise.. 1 if +
-    hdb = HDBSCAN(min_cluster_size=8, min_samples=8, cluster_selection_epsilon=eps).fit(
+    # hdb = HDBSCAN(min_cluster_size=8, min_samples=8, cluster_selection_epsilon=eps).fit(
+    #     X.detach().cpu()
+    # )
+    hdb = HDBSCAN(min_cluster_size=4, cluster_selection_epsilon=eps).fit(
         X.detach().cpu()
     )
-    # hdb = DBSCAN(min_samples=10, eps=0.5).fit(X.detach().cpu())
+    # hdb = DBSCAN(min_samples=5, eps=0.2).fit(X.detach().cpu())
     labels_hdb = hdb.labels_ + 1  # noise class goes to zero
     labels_hdb = np.reshape(labels_hdb, (-1))
     labels_hdb = torch.Tensor(labels_hdb).long().to(device)
@@ -35,7 +38,7 @@ def evaluate_efficiency_tracks(
     store=False,
     predict=False,
     ct=False,
-    clustering_mode="dbscan",
+    clustering_mode="clustering_normal",
     tau=False
 ):
     number_of_showers_total = 0
@@ -124,7 +127,7 @@ def evaluate_efficiency_tracks(
             # torch.save(
             #     dic,
             #     path_save
-            #     + "/graphs_2810/"
+            #     + "/graphs_1311/"
             #     + str(local_rank)
             #     + "_"
             #     + str(step)
@@ -153,7 +156,7 @@ def store_at_batch_end(
     predict=False,
 ):
     path_save_ = (
-        path_save + "/" + str(local_rank) + "_" + str(step) + "_" + str(epoch) + "0_0_0_Zjj_4000_5000_v1.pt"
+        path_save + "/" + str(local_rank) + "_" + str(step) + "_" + str(epoch) + "_Ztt_12_5k_12_8k_0312.pt" #"_Ztt_13_8k_14k_1811.pt"
     )
     if predict:
         df_batch = pd.concat(df_batch)

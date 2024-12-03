@@ -30,7 +30,7 @@ from src.layers.inference_oc_tracks import (
     evaluate_efficiency_tracks,
     store_at_batch_end,
 )
-from src.layers.losses import object_condensation_loss_tracking
+from src.layers.losses import object_condensation_loss_tracking_1
 from xformers.ops.fmha import BlockDiagonalMask
 import os
 import wandb
@@ -182,7 +182,7 @@ class ExampleWrapper(L.LightningModule):
         else:
             model_output = self(batch_g, y, 1)
 
-        (loss, losses) = object_condensation_loss_tracking(
+        (loss, losses) = object_condensation_loss_tracking_1(
             batch_g,
             model_output,
             y,
@@ -224,7 +224,7 @@ class ExampleWrapper(L.LightningModule):
         #     dic,
         #     self.args.model_prefix + "/graphs/" + str(batch_idx) + ".pt",
         # )
-        (loss, losses) = object_condensation_loss_tracking(
+        (loss, losses) = object_condensation_loss_tracking_1(
             batch_g,
             model_output,
             y,
@@ -313,7 +313,6 @@ class ExampleWrapper(L.LightningModule):
         # print("VALIDATION END NEXT EPOCH", self.trainer.global_rank)
         print("end of val predictiong")
         if self.args.predict:
-            print("storing baseline")
             store_at_batch_end(
                 self.args.model_prefix + "showers_df_evaluation",
                 self.df_showers,
@@ -322,7 +321,6 @@ class ExampleWrapper(L.LightningModule):
                 0,
                 predict=True,
             )
-            print("storing pandora")
             store_at_batch_end(
                 self.args.model_prefix + "showers_df_evaluation",
                 self.df_showers_ct,
