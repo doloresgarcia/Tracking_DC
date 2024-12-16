@@ -67,65 +67,70 @@ def create_inputs_from_table(output, get_vtx, cld=False, tau=False):
     else:
         hit_particle_link = torch.tensor(output["pf_vectoronly"][0, 0:number_hits])
         hit_particle_link_tau = None
-    if output["pf_vectoronly"].shape[1] > hit_particle_link.shape[0]:
-        features_hits = torch.permute(
-            torch.tensor(output["pf_features"][:, 0:number_hits]), (1, 0)
-        )
-        hit_type = features_hits[:, -2].clone()
-        hit_type_one_hot = torch.nn.functional.one_hot(hit_type.long(), num_classes=2)
-        if get_vtx:
-            hit_type_one_hot = hit_type_one_hot
-            features_hits = features_hits
-            hit_particle_link = hit_particle_link
-        else:
-            mask_DC = hit_type == 0
-            hit_type_one_hot = hit_type_one_hot[mask_DC]
-            features_hits = features_hits[mask_DC]
-            hit_particle_link = hit_particle_link[mask_DC]
-            hit_type = hit_type[mask_DC]
+    # print(output["pf_vectoronly"].shape[1], hit_particle_link.shape[0])
+    # if output["pf_vectoronly"].shape[1] > hit_particle_link.shape[0]:
+    print("hit_particle_link", torch.unique(hit_particle_link))
+    features_hits = torch.permute(
+        torch.tensor(output["pf_features"][:, 0:number_hits]), (1, 0)
+    )
+    
+    hit_type = features_hits[:, 9].clone()
+    hit_type_one_hot = torch.nn.functional.one_hot(hit_type.long(), num_classes=2)
+    if get_vtx:
+        hit_type_one_hot = hit_type_one_hot
+        features_hits = features_hits
+        hit_particle_link = hit_particle_link
+    else:
+        mask_DC = hit_type == 0
+        hit_type_one_hot = hit_type_one_hot[mask_DC]
+        features_hits = features_hits[mask_DC]
+        hit_particle_link = hit_particle_link[mask_DC]
+        hit_type = hit_type[mask_DC]
 
-        unique_list_particles = list(np.unique(hit_particle_link))
+    unique_list_particles = list(np.unique(hit_particle_link))
+    print("unique_list_particles", unique_list_particles)
+    unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
+    features_particles = torch.permute(
+        torch.tensor(output["pf_vectors"][:, 0:number_part]),
+        (1, 0),
+    )
+
+    y_data_graph = features_particles
+    y_id = features_particles[:, 4]
+    
+    mask_particles = check_unique_particles(unique_list_particles, y_id)
+
+    y_data_graph = features_particles[mask_particles]
+    if tau:
+        print("y_id", y_id)
+        print("hit_particle_link_tau",torch.unique(hit_particle_link_tau))
+        mask_taus = check_unique_particles(torch.unique(hit_particle_link_tau), y_id)
+        pt_taus = features_particles[mask_taus][:,6]
+        print("pt_taus", pt_taus)
+    else:
+        pt_taus = None
+    print("features_particles", features_particles.shape, torch.sum(mask_particles).item())
+    if features_particles.shape[0] >= torch.sum(mask_particles).item():
+        hit_particle_link = fix_splitted_tracks(hit_particle_link, y_data_graph)
+
+        cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
         unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
+
         features_particles = torch.permute(
-            torch.tensor(output["pf_vectors"][:, :]),
+            torch.tensor(output["pf_vectors"][:, 0:number_part]),
             (1, 0),
         )
 
-        y_data_graph = features_particles
         y_id = features_particles[:, 4]
-        
         mask_particles = check_unique_particles(unique_list_particles, y_id)
-
+        
         y_data_graph = features_particles[mask_particles]
-        if tau:
-            print("y_id", y_id)
-            print("hit_particle_link_tau",torch.unique(hit_particle_link_tau))
-            mask_taus = check_unique_particles(torch.unique(hit_particle_link_tau), y_id)
-            pt_taus = features_particles[mask_taus][:,6]
-            print("pt_taus", pt_taus)
-        else:
-            pt_taus = None
-        if features_particles.shape[0] > torch.sum(mask_particles).item():
-            hit_particle_link = fix_splitted_tracks(hit_particle_link, y_data_graph)
-
-            cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
-            unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
-
-            features_particles = torch.permute(
-                torch.tensor(output["pf_vectors"][:, :]),
-                (1, 0),
-            )
-
-            y_id = features_particles[:, 4]
-            mask_particles = check_unique_particles(unique_list_particles, y_id)
-            
-            y_data_graph = features_particles[mask_particles]
-
-            assert len(y_data_graph) == len(unique_list_particles)
-        else:
-            graph_empty = True
+        print(y_data_graph.shape, unique_list_particles.shape)
+        assert len(y_data_graph) == len(unique_list_particles)
     else:
         graph_empty = True
+    # else:
+    #     graph_empty = True
     if graph_empty:
         return [None]
     else:
@@ -163,7 +168,7 @@ def create_graph_tracking(
         features_hits,
         hit_type,
     ) = create_inputs_from_table(output)
-    print(features_hits.shape)
+
     #! REMOVING LOOPERS TO CHECK IF THE OUTPUTS ARE THE SAME
     mask_not_loopers, mask_particles = remove_loopers(hit_particle_link, y_data_graph)
     hit_type_one_hot = hit_type_one_hot[mask_not_loopers]
@@ -181,7 +186,7 @@ def create_graph_tracking(
         g = dgl.DGLGraph()
         g.add_nodes(hit_type_one_hot.shape[0])
 
-        hit_features_graph = features_hits[:, 4:-1]
+        hit_features_graph = features_hits[:, 4:-2]
         # uvz = convert_to_conformal_coordinates(features_hits[:, 0:3])
         # polar = convert_to_polar_coordinates(uvz)
         # hit_features_graph = torch.cat(
@@ -194,6 +199,7 @@ def create_graph_tracking(
         g.ndata["particle_number_nomap"] = hit_particle_link
         g.ndata["pos_hits_xyz"] = features_hits[:, 0:3]
         g.ndata["e_dep"] = features_hits[:, 3]
+        g.ndata["is_overlay"] = features_hits[:, -1]
         if len(y_data_graph) < 4:
             graph_empty = True
     else:
@@ -223,7 +229,7 @@ def create_weights_for_shower_hits(g):
     return g
 
 
-def create_graph_tracking_global(output, get_vtx=False, vector=False, tau=False):
+def create_graph_tracking_global(output, get_vtx=False, vector=False, tau=False, overlay=False):
     graph_empty = False
     result = create_inputs_from_table(output, get_vtx, tau=tau)
     if len(result) == 1:
@@ -240,19 +246,41 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False, tau=False)
             pt_taus
         ) = result
         # print("hit_type_one_hot previous to removing loopers", hit_type_one_hot.shape, hit_particle_link.shape)
-        mask_not_loopers, mask_particles = remove_loopers(
-            hit_particle_link, y_data_graph, features_hits[:, 3:6], cluster_id
-        )
+        if not overlay:
+            mask_not_loopers, mask_particles = remove_loopers(
+                hit_particle_link, y_data_graph, features_hits[:, 3:6], cluster_id
+            )
 
-        hit_type_one_hot = hit_type_one_hot[mask_not_loopers]
-        cluster_id = cluster_id[mask_not_loopers]
-        hit_particle_link = hit_particle_link[mask_not_loopers]
-        if tau:
-            hit_particle_link_tau = hit_particle_link_tau[mask_not_loopers]
-        features_hits = features_hits[mask_not_loopers]
-        hit_type = hit_type[mask_not_loopers]
-        y_data_graph = y_data_graph[mask_particles]
-        cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
+            hit_type_one_hot = hit_type_one_hot[mask_not_loopers]
+            cluster_id = cluster_id[mask_not_loopers]
+            hit_particle_link = hit_particle_link[mask_not_loopers]
+            if tau:
+                hit_particle_link_tau = hit_particle_link_tau[mask_not_loopers]
+            features_hits = features_hits[mask_not_loopers]
+            hit_type = hit_type[mask_not_loopers]
+            y_data_graph = y_data_graph[mask_particles]
+            cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
+        else:
+            mask_not_loopers, mask_particles = remove_loopers_overlay(
+                hit_particle_link, y_data_graph, features_hits[:, 3:6], cluster_id
+            )
+
+            hit_type_one_hot = hit_type_one_hot[mask_not_loopers]
+            cluster_id = cluster_id[mask_not_loopers]
+            hit_particle_link = hit_particle_link[mask_not_loopers]
+            features_hits = features_hits[mask_not_loopers]
+            hit_type = hit_type[mask_not_loopers]
+            y_data_graph = y_data_graph[mask_particles]
+
+            cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
+            
+            mask_loopers, mask_particles = create_noise_label(
+            hit_particle_link, y_data_graph, cluster_id, True, features_hits[:,-1]
+            )
+            hit_particle_link[mask_loopers] = -1
+            y_data_graph = y_data_graph[mask_particles]
+            cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
+
         if hit_type_one_hot.shape[0] > 0:
             mask_dc = hit_type == 0
             mask_vtx = hit_type == 1
@@ -300,6 +328,9 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False, tau=False)
 
                     pos_xyz = torch.cat(
                         (features_hits[:, 0:3][mask_vtx], left_post), dim=0
+                    )
+                    is_overlay = torch.cat(
+                        (features_hits[:,-1][mask_vtx].view(-1), features_hits[:,-1][mask_dc].view(-1)), dim=0
                     )
                     vector_data = torch.cat(
                         (0 * features_hits[:, 0:3][mask_vtx], right_post - left_post),
@@ -389,6 +420,7 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False, tau=False)
             g.ndata["pos_hits_xyz"] = pos_xyz
             g.ndata["cellid"] = cellid
             g.ndata["unique_id"] = cellid.view(-1)
+            g.ndata["is_overlay"] = is_overlay
             
             # g.ndata["produced_from_secondary_"] = produced_from_secondary_.view(-1)
             # g = create_weights_for_shower_hits(g)
@@ -407,6 +439,37 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False, tau=False)
         y_data_graph = 0
     # print("graph_empty", graph_empty)
     return [g, y_data_graph], graph_empty
+
+def remove_loopers_overlay(hit_particle_link, y, coord, cluster_id):
+    unique_p_numbers = torch.unique(hit_particle_link)
+    cluster_id_unique = torch.unique(cluster_id)
+    # mask_p = y[:, 5] < 0.1
+    # remove particles with a couple hits
+    number_of_hits = get_number_hits(cluster_id)
+    mask_hits = number_of_hits < 5
+
+    mask_all = mask_hits.view(-1)
+    list_remove = unique_p_numbers[mask_all.view(-1)]
+    # print("number_of_hits", number_of_hits)
+    # print("list_remove", cluster_id_unique[mask_all.view(-1)])
+    if len(list_remove) > 0:
+        mask = torch.tensor(np.full((len(hit_particle_link)), False, dtype=bool))
+        for p in list_remove:
+            mask1 = hit_particle_link == p
+            mask = mask1 + mask
+    else:
+        mask = torch.tensor(np.full((len(hit_particle_link)), False, dtype=bool))
+    list_p = unique_p_numbers
+    if len(list_remove) > 0:
+        mask_particles = np.full((len(list_p)), False, dtype=bool)
+        for p in list_remove:
+            mask_particles1 = list_p == p
+            mask_particles = mask_particles1 + mask_particles
+    else:
+        mask_particles = torch.tensor(np.full((len(list_p)), False, dtype=bool))
+    return ~mask.to(bool), ~mask_particles.to(bool)
+
+
 
 
 def remove_loopers(hit_particle_link, y, coord, cluster_id):
@@ -475,3 +538,49 @@ def convert_to_polar_coordinates(uvz):
 
     polar = torch.cat([rho, theta], dim=-1)
     return polar
+
+
+
+def create_noise_label(hit_particle_link, y, cluster_id, overlay=False,overlay_flag=None):
+    """
+    Created a label to each node in the graph to determine if it is noise 
+    Hits are considered as noise if:
+    - They belong to an MC that left no more than 4 hits (mask_hits)
+    - The particle has p below x, currently it is set to 0 so not condition on this case (mask_p)
+    - The hit is overlaid background
+    #TODO overlay hits could leave a track (there can be more than a couple hits for a given particle, for now we don't ask to reconstruc these but it might make our alg worse)
+
+    Args:
+        hit_particle_link (torch Tensor): particle the nodes belong to
+        y (torch Tensor): particle features
+        cluster_id (torch Tensor): particle the node belongs to from 1,N (no gaps)
+        overlay (bool): is there background overlay in the data
+        overlay_flag (torch Tensor): which hits are background
+    Returns:
+        mask (torch bool Tensor): which hits are noise
+        mask_particles: which particles should be removed 
+    """
+    unique_p_numbers = torch.unique(hit_particle_link)
+
+    number_of_overlay = scatter_sum(overlay_flag.view(-1), cluster_id.long(), dim=0)[1:].view(-1)
+    mask_overlay = number_of_overlay>0
+    mask_all =  mask_overlay.view(-1)
+
+    list_remove = unique_p_numbers[mask_all.view(-1)]
+
+    if len(list_remove) > 0:
+        mask = torch.tensor(np.full((len(hit_particle_link)), False, dtype=bool))
+        for p in list_remove:
+            mask1 = hit_particle_link == p
+            mask = mask1 + mask
+    else:
+        mask = torch.tensor(np.full((len(hit_particle_link)), False, dtype=bool))
+    list_p = unique_p_numbers
+    if len(list_remove) > 0:
+        mask_particles = np.full((len(list_p)), False, dtype=bool)
+        for p in list_remove:
+            mask_particles1 = list_p == p
+            mask_particles = mask_particles1 + mask_particles
+    else:
+        mask_particles = torch.tensor(np.full((len(list_p)), False, dtype=bool))
+    return mask.to(bool), ~mask_particles.to(bool)

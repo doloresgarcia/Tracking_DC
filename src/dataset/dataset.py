@@ -300,7 +300,7 @@ class _SimpleIter(object):
             [g, features_partnn], graph_empty = create_graph_tracking_CLD(X, predict, tau, overlay)
         else:
             [g, features_partnn], graph_empty = create_graph_tracking_global(
-                X, get_vtx, vector, tau
+                X, get_vtx, vector, tau, overlay
             )
         return [g, features_partnn], graph_empty
 
