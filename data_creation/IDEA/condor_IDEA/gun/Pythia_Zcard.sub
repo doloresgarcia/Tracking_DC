@@ -1,0 +1,12 @@
+# here goes your shell script
+executable    = src/run_sequence_global.sh
+
+# here you specify where to put .log, .out and .err files
+output                = std/condor.$(ClusterId).$(ProcId).out
+error                 = std/condor.$(ClusterId).$(ProcId).err
+log                   = std/condor.$(ClusterId).log
+
++AccountingGroup = "group_u_FCC.local_gen"
++JobFlavour    = "microcentury"
+arguments="/eos/experiment/fcc/ee/idea_tracking/idea_v3_01_tracking Pythia Zcard 3 1"
+queue

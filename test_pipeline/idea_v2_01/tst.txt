@@ -1,0 +1,6 @@
+ddsim --compactFile /afs/cern.ch/user/a/adevita/public/workDir/k4geo/FCCee/IDEA/compact/IDEA_o1_v03/IDEA_o1_v03.xml
+      --outputFile out_edm4hep/out_sim_edm4hep_${SEED}.root \
+      --inputFiles out_hepmc/out_${SEED}.hepmc \
+      --numberOfEvents $NEV \
+      --random.seed $SEED \
+      --part.minimalKineticEnergy "0.001*MeV"
