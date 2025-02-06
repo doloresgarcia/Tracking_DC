@@ -13,23 +13,13 @@ import torch
 import wandb
 import warnings
 
-# warnings.filterwarnings("ignore")
-# from torch import nn
-# import torch.nn.functional as F
-# from torchvision import transforms
-from torchvision.datasets import MNIST
 from torch.utils.data import DataLoader
 import lightning as L
-from src.utils.parser_args import parser
 from lightning.pytorch.loggers import WandbLogger
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
-from src.utils.train_utils import (
-    train_load,
-    test_load,
-)
+from src.utils.parser_args import parser
 from src.utils.import_tools import import_module
-import wandb
+
 
 from lightning.pytorch.callbacks import (
     TQDMProgressBar,
@@ -37,18 +27,19 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 from lightning.pytorch.profilers import AdvancedProfiler
+
+from src.utils.train_utils import (
+    train_load,
+    test_load,
+)
 from src.utils.train_utils import get_samples_steps_per_epoch, model_setup, get_gpu_dev
 from src.models.Build_graphs import FreezeEFDeepSet
-import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = ""
-# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
-# os.environ["TORCH_USE_CUDA_DSA"] = "1"
-# os.environ["TORCH_LOGS"] = "onnx_diagnostics"
-# os.environ["TORCHLIB_EXPERIMENTAL_PREFER_TRACING"] = "1
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 
 
 def main():
-
+    
     args = parser.parse_args()
     args = get_samples_steps_per_epoch(args)
     args.local_rank = 0
@@ -63,10 +54,11 @@ def main():
         gpus = [int(i) for i in args.gpus.split(",")]
     else:
         print("No GPUs flag provided - Setting GPUs to [0]")
-        gpus = [0]
+        gpus = [0]    
+    
     wandb_logger = WandbLogger(
         project=args.wandb_projectname,
-        entity=args.wandb_entity,
+        # entity=args.wandb_entity,
         name=args.wandb_displayname,
     )
     if args.export_onnx:
@@ -138,7 +130,7 @@ def main():
         trainer = L.Trainer(
             callbacks=callbacks,
             accelerator="gpu",
-            devices=[1,2],
+            devices=[3],
             default_root_dir=args.model_prefix,
             logger=wandb_logger,
             # max_epochs=5,
@@ -148,8 +140,7 @@ def main():
             limit_val_batches=5,
         )
         args.local_rank = trainer.global_rank
-        print("here")
-        train_loader, val_loader, data_config, train_input_names = train_load(args)
+        # train_loader, val_loader, data_config, train_input_names = train_load(args)
 
         trainer.fit(
             model=model,

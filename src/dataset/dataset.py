@@ -26,6 +26,7 @@ from src.dataset.functions_graph_tracking import (
 )
 
 from src.dataset.functions_graph_tracking_CLD import create_graph_tracking_CLD
+from src.dataset.functions_graph_tracking_IDEAv3 import create_graph_tracking_global_v3
 
 
 def _finalize_inputs(table, data_config):
@@ -296,8 +297,15 @@ class _SimpleIter(object):
         predict = self._data_config.graph_config.get("predict", False)
         tau = self._data_config.graph_config.get("tau", False)
         overlay = self._data_config.graph_config.get("overlay", False)
+        geometry_version_v3 = self._data_config.graph_config.get("geometry_version", False)
+        
         if CLD:
             [g, features_partnn], graph_empty = create_graph_tracking_CLD(X, predict, tau, overlay)
+            
+        elif geometry_version_v3:
+            result = create_graph_tracking_global_v3(X, predict, overlay)
+            [g, features_partnn], graph_empty = result
+            
         else:
             [g, features_partnn], graph_empty = create_graph_tracking_global(
                 X, get_vtx, vector, tau, overlay

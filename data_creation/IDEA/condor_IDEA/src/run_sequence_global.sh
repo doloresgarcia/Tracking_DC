@@ -15,7 +15,7 @@ TYPE=${2}
 CONFIG=${3} 
 DETECTOR=${4} 
 SEED=${5} #random seed
-NEV=1000
+NEV=100
 
 
 PFDIR=/afs/cern.ch/user/a/adevita/public/workDir/Tracking_DC/data_creation
@@ -50,7 +50,7 @@ if [[ "${TYPE}" == "Pythia" ]]
       k4run $PFDIR/Pythia_generation/pythia.py -n $NEV --Dumper.Filename out_hepmc/out_${SEED}.hepmc --Pythia8.PythiaInterface.pythiacard ${CONFIG}_${SEED}.cmd
 
 fi
-#rm ${CONFIG}_${SEED}.cmd
+rm ${CONFIG}_${SEED}.cmd
 
 mkdir -p out_edm4hep/
 ddsim --compactFile $PATH_TO_K4GEO/FCCee/IDEA/compact/IDEA_o1_v0${DETECTOR}/IDEA_o1_v0${DETECTOR}.xml \
@@ -59,11 +59,11 @@ ddsim --compactFile $PATH_TO_K4GEO/FCCee/IDEA/compact/IDEA_o1_v0${DETECTOR}/IDEA
       --numberOfEvents $NEV \
       --random.seed $SEED \
       --part.minimalKineticEnergy "0.001*MeV"
-#rm out_hepmc/out_${SEED}.hepmc
+rm out_hepmc/out_${SEED}.hepmc
 
 mkdir -p out_digi/
 k4run ${K4RECTRACKER_dir}/runIDEAtrackerDigitizer.py --detector "IDEA_v${DETECTOR}_o1" --inputFile out_edm4hep/out_sim_edm4hep_${SEED}.root --outputFile out_digi/output_IDEA_DIGI_${SEED}.root
-#rm out_edm4hep/out_sim_edm4hep_${SEED}.root
+rm out_edm4hep/out_sim_edm4hep_${SEED}.root
 
-python $PFDIR/data_processing/IDEA/process_tree_global.py out_digi/output_IDEA_DIGI_${SEED}.root ../${CONFIG}/${CONFIG}_${SEED}.root ${DETECTOR} False
-#rm out_digi/output_IDEA_DIGI_${SEED}.root
+python $PFDIR/data_processing/IDEA/process_tree_global.py out_digi/output_IDEA_DIGI_${SEED}.root ${FULLOUTDIR}/${CONFIG}_graphs_${SEED}.root ${DETECTOR} False
+rm out_digi/output_IDEA_DIGI_${SEED}.root

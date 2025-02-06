@@ -19,5 +19,5 @@ if [[ $VERSION -eq 3 ]]; then
     outdir="/eos/experiment/fcc/ee/idea_tracking/idea_v3_01_tracking/"
 fi
 
-python src/submit_jobs_train.py  --queue microcentury --outdir $outdir --njobs $NFILE --type $TYPE --config $CONFIG --detectorVersion $VERSION
+python src/submit_jobs_train.py  --queue longlunch --outdir $outdir --njobs $NFILE --type $TYPE --config $CONFIG --detectorVersion $VERSION
 

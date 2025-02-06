@@ -22,6 +22,7 @@ def _read_hdf5(filepath, branches, load_range=None):
 
 def _read_root(filepath, branches, load_range=None, treename=None):
     import uproot
+    uproot.open.defaults["num_workers"] = 0  # Disabilita i thread
     with uproot.open(filepath) as f:
         if treename is None:
             treenames = set([k.split(';')[0] for k, v in f.items() if getattr(v, 'classname', '') == 'TTree'])
@@ -37,7 +38,7 @@ def _read_root(filepath, branches, load_range=None, treename=None):
             stop = max(start + 1, math.trunc(load_range[1] * tree.num_entries))
         else:
             start, stop = None, None
-        outputs = tree.arrays(filter_name=branches, entry_start=start, entry_stop=stop)
+        outputs = tree.arrays(filter_name=branches, entry_start=start, entry_stop=stop,library="ak")
     return outputs
 
 

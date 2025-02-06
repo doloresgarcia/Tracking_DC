@@ -1,18 +1,19 @@
 from os import path
 import sys
 
-# sys.path.append(
-#     path.abspath("/afs/cern.ch/work/m/mgarciam/private/geometric-algebra-transformer/")
-# )
-# sys.path.append(path.abspath("/mnt/proj3/dd-23-91/cern/geometric-algebra-transformer/"))
-
 from gatr import GATr, SelfAttentionConfig, MLPConfig
+
+# from src.gatr.nets.gatr import GATr
+# from src.gatr.layers.attention.config import SelfAttentionConfig
+# from src.gatr.layers.mlp.config import MLPConfig
 from gatr.interface import (
     embed_point,
     extract_scalar,
     extract_point,
     embed_scalar,
     embed_translation,
+    embed_oriented_plane,
+    extract_oriented_plane
 )
 import torch
 import torch.nn as nn
@@ -21,28 +22,23 @@ import numpy as np
 from typing import Tuple, Union, List
 import dgl
 from src.logger.plotting_tools import PlotCoordinates
-from src.layers.obj_cond_inf import calc_energy_loss
-from src.models.gravnet_calibration import (
-    obtain_batch_numbers,
-)
-from src.layers.inference_oc import create_and_store_graph_output
+from src.logger.logger_wandb import log_losses_wandb_tracking
+from lightning.pytorch.serve import ServableModule, ServableModuleValidator
 import lightning as L
-from src.utils.nn.tools import log_losses_wandb_tracking
+
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from src.layers.inference_oc_tracks import (
     evaluate_efficiency_tracks,
     store_at_batch_end,
 )
-from src.models.gravnet_3_L_tracking import object_condensation_loss_tracking
+from src.layers.losses import object_condensation_loss_tracking
+from src.layers.batch_operations import obtain_batch_numbers
+
 from xformers.ops.fmha import BlockDiagonalMask
 import os
 import wandb
-# from src.layers.obtain_statistics import (
-#     obtain_statistics_graph,
-#     create_stats_dict,
-#     save_stat_dict,
-#     plot_distributions,
-# )
+# from src.gatr.primitives.linear import _compute_pin_equi_linear_basis
+# from src.gatr.primitives.attention import _build_dist_basis
 
 
 class ExampleWrapper(L.LightningModule):
@@ -85,23 +81,33 @@ class ExampleWrapper(L.LightningModule):
             in_mv_channels=1,
             out_mv_channels=1,
             hidden_mv_channels=hidden_mv_channels,
-            in_s_channels=None,
-            out_s_channels=None,
+            in_s_channels=1,
+            out_s_channels=1,
             hidden_s_channels=hidden_s_channels,
             num_blocks=blocks,
             attention=SelfAttentionConfig(),  # Use default parameters for attention
             mlp=MLPConfig(),  # Use default parameters for MLP
         )
         self.ScaledGooeyBatchNorm2_1 = nn.BatchNorm1d(self.input_dim, momentum=0.1)
-        self.clustering = nn.Linear(16, self.output_dim - 1, bias=False)
-        self.beta = nn.Linear(16, 1)
+        # self.clustering = nn.Linear(16, self.output_dim - 1, bias=False)
+        # self.beta = nn.Linear(16, 1)
+        
+        self.clustering = nn.Linear(3, self.output_dim - 1, bias=False)
+        self.beta = nn.Linear(2, 1)
+        
         self.vector_like_data = False
 
     def forward(self, g, y, step_count, eval=""):
-        inputs = g.ndata["pos_hits_xyz"]
-
+        
+        inputs_hits = g.ndata["coordinate_hits"]
+        inputs_dc = g.ndata["coordinate_planes"]
+        hit_types = g.ndata["hit_type"]
+        plane_position = inputs_dc[:, :3]   # pos_wire_x , pos_wire_y , pos_wire_z
+        angles = inputs_dc[:, 3:5]          # wire_stereo_angle , wire_azimuthal_angle
+        distance = inputs_dc[:, 5]          # circle radius
+        
         if self.trainer.is_global_zero and step_count % 1000 == 0:
-            g.ndata["original_coords"] = g.ndata["pos_hits_xyz"]
+            g.ndata["original_coords"] = g.ndata["true_coordinates"]
             PlotCoordinates(
                 g,
                 path="input_coords",
@@ -111,32 +117,62 @@ class ExampleWrapper(L.LightningModule):
                 epoch=str(self.current_epoch) + eval,
                 step_count=step_count,
             )
-        inputs_scalar = g.ndata["hit_type"].view(-1, 1)
-        inputs = self.ScaledGooeyBatchNorm2_1(inputs)
-        # inputs = inputs.unsqueeze(0)
-        if self.vector_like_data:
-            velocities = g.ndata["vector"]
-            velocities = embed_translation(velocities)
-            embedded_inputs = (
-                embed_point(inputs) + embed_scalar(inputs_scalar) + velocities
-            )
-        else:
-            embedded_inputs = embed_point(inputs) + embed_scalar(inputs_scalar)
-        embedded_inputs = embedded_inputs.unsqueeze(
-            -2
-        )  # (batch_size*num_points, 1, 16)
-        mask = self.build_attention_mask(g)
-        scalars = torch.zeros((inputs.shape[0], 1))
-        # Pass data through GATr
-        embedded_outputs, _ = self.gatr(
-            embedded_inputs, scalars=scalars, attention_mask=mask
-        )  # (..., num_points, 1, 16)
-        output = embedded_outputs[:, 0, :]
-        x_point = output
-        x_scalar = output
+        
+        # cicle area
+        circle_area = (torch.pi * distance**2).unsqueeze(-1) 
+        
+        # normal direction
+        wire_stereo_angle = angles[:, 0]  # theta
+        wire_azimuthal_angle = angles[:, 1]  # phi
 
+        normal_x = torch.cos(wire_azimuthal_angle) * torch.cos(wire_stereo_angle)
+        normal_y = torch.sin(wire_azimuthal_angle) * torch.cos(wire_stereo_angle)
+        normal_z = torch.sin(wire_stereo_angle)
+        normal_direction = torch.stack((normal_x, normal_y, normal_z), dim=1)
+        
+        # batch normalization
+        inputs_scalar = g.ndata["hit_type"].view(-1, 1)
+        inputs_hits = self.ScaledGooeyBatchNorm2_1(inputs_hits)
+        plane_position = self.ScaledGooeyBatchNorm2_1(plane_position)
+        # normal_direction = self.ScaledGooeyBatchNorm2_1(normal_direction)
+        
+        #embedding
+        
+        embedded_p = embed_point(inputs_hits)
+        embedded_s = embed_scalar(circle_area)
+        embedded_o = embed_oriented_plane(normal_direction, plane_position)
+
+        print(f"embedded_p shape: {embedded_p.shape}")
+        print(f"embedded_s shape: {embedded_s.shape}")
+        print(f"embedded_o shape: {embedded_o.shape}")
+
+        embedded_inputs = embedded_p + embedded_o + embedded_s
+        # print(f"embedded_inputs shape: {embedded_inputs.shape}")
+    
+        embedded_inputs = embedded_inputs.unsqueeze(-2)  # (batch_size*num_points, 1, 16)
+        # print(f"embedded_o shape: {embedded_inputs.shape}")
+        
+        mask = self.build_attention_mask(g)
+        scalars = inputs_scalar
+        
+        # Pass data through GATr
+        # embedded_outputs, _ = self.gatr(embedded_inputs, scalars=scalars, attention_mask=mask)  # (..., num_points, 1, 16)
+        
+        embedded_outputs, scalar_outputs = self.gatr(embedded_inputs, scalars=scalars, attention_mask=mask)  # (..., num_points, 1, 16)
+        
+        # output = embedded_outputs[:, 0, :]
+        # x_point = output
+        # x_scalar = output
+        
+        points = extract_point(embedded_outputs[:, 0, :])
+        nodewise_outputs = extract_scalar(embedded_outputs)  # (..., num_points, 1, 1)
+        
+        x_point = points
+        x_scalar = torch.cat((nodewise_outputs.view(-1, 1), scalar_outputs.view(-1, 1)), dim=1)
+        
         x_cluster_coord = self.clustering(x_point)
         beta = self.beta(x_scalar)
+    
         g.ndata["final_cluster"] = x_cluster_coord
         g.ndata["beta"] = beta.view(-1)
         if self.trainer.is_global_zero and step_count % 1000 == 0:
@@ -149,7 +185,7 @@ class ExampleWrapper(L.LightningModule):
                 step_count=step_count,
             )
         x = torch.cat((x_cluster_coord, beta.view(-1, 1)), dim=1)
-        return x, embedded_outputs
+        return x #, embedded_outputs
 
     def build_attention_mask(self, g):
         """Construct attention mask from pytorch geometric batch.
@@ -178,10 +214,15 @@ class ExampleWrapper(L.LightningModule):
         #     self.stat_dict = obtain_statistics_graph(
         #         self.stat_dict, y, batch_g, pf=False
         #     )
+        # if self.trainer.is_global_zero:
+        #     model_output, embedded_outputs = self(batch_g, y, batch_idx)
+        # else:
+        #     model_output, embedded_outputs = self(batch_g, y, 1)
+        
         if self.trainer.is_global_zero:
-            model_output, embedded_outputs = self(batch_g, y, batch_idx)
+            model_output = self(batch_g, y, batch_idx)
         else:
-            model_output, embedded_outputs = self(batch_g, y, 1)
+            model_output = self(batch_g, y, 1)
 
         (loss, losses) = object_condensation_loss_tracking(
             batch_g,
@@ -213,7 +254,9 @@ class ExampleWrapper(L.LightningModule):
 
         batch_g = batch[0]
 
-        model_output, embedded_outputs = self(batch_g, y, batch_idx, eval="_val")
+        # model_output, embedded_outputs = self(batch_g, y, batch_idx, eval="_val")
+        model_output = self(batch_g, y, batch_idx, eval="_val")
+        
         preds = model_output.squeeze()
 
         (loss, losses) = object_condensation_loss_tracking(
@@ -232,11 +275,10 @@ class ExampleWrapper(L.LightningModule):
         if self.trainer.is_global_zero:
             log_losses_wandb_tracking(True, batch_idx, 0, losses, loss, val=True)
         # self.validation_step_outputs.append([model_output, batch_g, y])
-        if self.trainer.is_global_zero:
+        if self.trainer.is_global_zero and self.args.predict:
             df_batch = evaluate_efficiency_tracks(
                 batch_g,
                 model_output,
-                embedded_outputs,
                 y,
                 0,
                 batch_idx,
@@ -244,9 +286,12 @@ class ExampleWrapper(L.LightningModule):
                 path_save=self.args.model_prefix + "showers_df_evaluation",
                 store=True,
                 predict=False,
+                tau=self.args.tau
+
             )
             if self.args.predict:
-                self.df_showers.append(df_batch)
+                if len(df_batch) > 0:
+                    self.df_showers.append(df_batch)
 
     def on_train_epoch_end(self):
         # if self.current_epoch == 0 and self.trainer.is_global_zero:
@@ -312,7 +357,6 @@ class ExampleWrapper(L.LightningModule):
                 # multiple of "trainer.check_val_every_n_epoch".
             },
         }
-
 
 def obtain_batch_numbers(g):
     graphs_eval = dgl.unbatch(g)

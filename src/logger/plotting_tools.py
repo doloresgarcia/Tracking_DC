@@ -21,6 +21,7 @@ def PlotCoordinates(
         outdir = outdir + "/figures_evaluation"
     else:
         outdir = outdir + "/figures"
+        print(outdir)
         if not os.path.exists(outdir):
             os.makedirs(outdir)
 

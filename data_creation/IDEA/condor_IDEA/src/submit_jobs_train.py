@@ -105,7 +105,7 @@ log                   = std/condor.$(ClusterId).log
         if job>discard_events:
             
             seed = str(job + 1)
-            basename = config + "_" + seed + ".root"
+            basename = config + "_graphs_" + seed + ".root"
             outputFile = storage_path + "/" + basename
 
             # print outdir, basename, outputFile
