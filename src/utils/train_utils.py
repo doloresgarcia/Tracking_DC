@@ -17,7 +17,19 @@ from src.dataset.dataset import SimpleIterDataset
 from src.utils.import_tools import import_module
 from src.layers.batch_operations import graph_batch_func
 
+def set_gpus(args):
+    if args.gpus:
+        gpus = [int(i) for i in args.gpus.split(",")]
+        dev = torch.device(gpus[0])
+        print("Using GPUs:", gpus)
+    else:
+        print("No GPUs flag provided - Setting GPUs to [0]")
+        gpus = [0]
+        dev = torch.device(gpus[0])
+        raise Exception("Please provide GPU number")
+    return gpus, dev
 
+    
 def get_gpu_dev(args):
     if args.gpus != "":
         accelerator = "gpu"
@@ -102,7 +114,8 @@ def to_filelist(args, mode="train"):
 
     if args.local_rank is not None:
         if mode == "train":
-            local_world_size = 2  # int(os.environ['LOCAL_WORLD_SIZE'])
+            gpus_list, _ = set_gpus(args)
+            local_world_size = len(gpus_list)  # int(os.environ['LOCAL_WORLD_SIZE'])
             new_file_dict = {}
             for name, files in file_dict.items():
                 new_files = files[args.local_rank :: local_world_size]

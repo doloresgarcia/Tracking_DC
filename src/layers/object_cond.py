@@ -24,6 +24,39 @@ def assert_no_nans(x):
 DEBUG = False
 
 
+def calculate_weights_for_class_hit_type_batch(g, object_index, is_sig):
+    vx_hits = torch.sum(
+    1 * (g.ndata["hit_type"] == 1)[is_sig]
+    )
+    dc_hits = torch.sum(
+        1 * (g.ndata["hit_type"] ==0)[is_sig]
+    ) 
+    
+    
+    # muon_hits = torch.sum(
+    #     1 * (g.ndata["hit_type"] == 4)[is_sig]
+    # )
+    number_classes = 1*(vx_hits>0)+1*(dc_hits>0)
+    weights = 1.0 * torch.ones_like(g.ndata["hit_type"][is_sig])
+    weight_vx_per_object = 1.0 * torch.ones_like(vx_hits)
+    weight_dc_per_object = 1.0 *  torch.ones_like(vx_hits)
+    weight_vx_per_object = (vx_hits + dc_hits) / (
+        number_classes * vx_hits
+    )
+    weight_dc_per_object = (vx_hits + dc_hits) / (
+        number_classes* dc_hits
+    )
+
+    # weight_muon_per_object = (ecal_hits + hcal_hits+track_hits) / (
+    #     number_classes* muon_hits
+    # )
+    weights[g.ndata["hit_type"][is_sig] == 1] = weight_vx_per_object.view(-1)
+    weights[g.ndata["hit_type"][is_sig] == 0] = weight_dc_per_object.view(-1)
+    weights = weights
+
+    return weights
+
+
 def debug(*args, **kwargs):
     if DEBUG:
         print(*args, **kwargs)
@@ -323,6 +356,20 @@ def calc_LV_Lbeta(
         #! divide by the number of accounted points
         V_attractive = V_attractive.view(-1) / (N_k.view(-1) + 1e-3)
         L_V_attractive = torch.mean(V_attractive)
+    elif loss_type =="weighted":
+        weights = calculate_weights_for_class_hit_type_batch(g, torch.zeros_like(batch), is_sig)
+        # (n_sig_hits, 1) * (1, n_objects) * (n_sig_hits, n_objects)
+        V_attractive = weights.unsqueeze(-1)*q[is_sig].unsqueeze(-1) * q_alpha.unsqueeze(0) * norms_att
+        
+        assert V_attractive.size() == (n_hits_sig, n_objects)
+        #! each shower is account for separately
+        V_attractive = V_attractive.sum(dim=0)  # K objects
+        weight_per_object = scatter_add(weights, object_index)# weight per object 
+        V_attractive= V_attractive/weight_per_object
+        L_V_attractive = torch.mean(V_attractive)
+
+
+
     elif loss_type == "vrepweighted":
         if tracking:
             # weight the vtx hits inside the shower
@@ -422,7 +469,7 @@ def calc_LV_Lbeta(
     # We do however want to keep norms of noise hits w.r.t. objects
     # Power-scale the norms: Gaussian scaling term instead of a cone
     # Mask out the norms of hits w.r.t. the cluster they belong to
-    if loss_type == "hgcalimplementation" or loss_type == "vrepweighted":
+    if loss_type == "hgcalimplementation" or loss_type == "vrepweighted" or loss_type == "weighted":
         if dis:
             norms = norms / (2 * phi_alpha.unsqueeze(0) ** 2 + 1e-6)
             norms_rep = torch.exp(-(norms)) * M_inv
@@ -443,7 +490,7 @@ def calc_LV_Lbeta(
     # Sum over hits, then sum per event, then divide by n_hits_per_event, then sum up events
     nope = n_objects_per_event - 1
     nope[nope == 0] = 1
-    if loss_type == "hgcalimplementation" or loss_type == "vrepweighted":
+    if loss_type == "hgcalimplementation" or loss_type == "vrepweighted" or loss_type == "weighted":
         #! sum each object repulsive terms
         L_V_repulsive = V_repulsive.sum(dim=0)  # size number of objects
         number_of_repulsive_terms_per_object = torch.sum(M_inv, dim=0)
@@ -501,7 +548,7 @@ def calc_LV_Lbeta(
     L_beta_noise = L_beta_noise / batch_size
     # -------
     # L_beta signal term
-    if loss_type == "hgcalimplementation":
+    if loss_type == "hgcalimplementation" or loss_type == "weighted":
         beta_per_object_c = scatter_add(beta[is_sig], object_index)
 
         beta_alpha = beta[is_sig][index_alpha]
@@ -635,7 +682,7 @@ def calc_LV_Lbeta(
     # except:
     #    pass
     L_exp = L_beta
-    if loss_type == "hgcalimplementation" or loss_type == "vrepweighted":
+    if loss_type == "hgcalimplementation" or loss_type == "vrepweighted" or loss_type == "weighted":
         return (
             L_V,  # 0
             L_beta,

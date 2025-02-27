@@ -161,6 +161,7 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
             repul_weight=self.args.L_repulsive_weight,
             fill_loss_weight=self.args.fill_loss_weight,
             use_average_cc_pos=self.args.use_average_cc_pos,
+            loss_type= self.args.loss_type,
             tracking=True,
         )
         if self.trainer.is_global_zero:
@@ -196,7 +197,7 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
         # np.save(self.args.model_prefix + "/graphs/" + str(batch_idx) + "_onnx.npy", dic)
         # torch.save(
         #     dic,
-        #     self.args.model_prefix + "/graphs/" + str(batch_idx) + ".pt",
+        #     self.args.model_prefix + "/graphs1/" + str(batch_idx) + ".pt",
         # )
 
         (loss, losses) = object_condensation_loss_tracking(
@@ -212,6 +213,7 @@ class ExampleWrapper(L.LightningModule):  # nn.Module L.LightningModule
             repul_weight=self.args.L_repulsive_weight,
             fill_loss_weight=self.args.fill_loss_weight,
             use_average_cc_pos=self.args.use_average_cc_pos,
+            loss_type= self.args.loss_type,
             tracking=True,
         )
         if self.trainer.is_global_zero:

@@ -563,3 +563,11 @@ parser.add_argument(
     default=False,
     help="using tau mode for predict to store tau variables",
 )
+
+parser.add_argument(
+    "--loss-type",
+    type=str,
+    default="hgcalimplementation",
+    choices=["hgcalimplementation", "weighted"], 
+    help="loss for the training",
+)

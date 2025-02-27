@@ -69,7 +69,7 @@ def create_inputs_from_table(output, get_vtx, cld=False, tau=False):
         hit_particle_link_tau = None
     # print(output["pf_vectoronly"].shape[1], hit_particle_link.shape[0])
     # if output["pf_vectoronly"].shape[1] > hit_particle_link.shape[0]:
-    print("hit_particle_link", torch.unique(hit_particle_link))
+    # print("hit_particle_link", torch.unique(hit_particle_link))
     features_hits = torch.permute(
         torch.tensor(output["pf_features"][:, 0:number_hits]), (1, 0)
     )
@@ -88,7 +88,7 @@ def create_inputs_from_table(output, get_vtx, cld=False, tau=False):
         hit_type = hit_type[mask_DC]
 
     unique_list_particles = list(np.unique(hit_particle_link))
-    print("unique_list_particles", unique_list_particles)
+    # print("unique_list_particles", unique_list_particles)
     unique_list_particles = torch.Tensor(unique_list_particles).to(torch.int64)
     features_particles = torch.permute(
         torch.tensor(output["pf_vectors"][:, 0:number_part]),
@@ -109,7 +109,7 @@ def create_inputs_from_table(output, get_vtx, cld=False, tau=False):
         print("pt_taus", pt_taus)
     else:
         pt_taus = None
-    print("features_particles", features_particles.shape, torch.sum(mask_particles).item())
+    # print("features_particles", features_particles.shape, torch.sum(mask_particles).item())
     if features_particles.shape[0] >= torch.sum(mask_particles).item():
         hit_particle_link = fix_splitted_tracks(hit_particle_link, y_data_graph)
 
@@ -125,7 +125,7 @@ def create_inputs_from_table(output, get_vtx, cld=False, tau=False):
         mask_particles = check_unique_particles(unique_list_particles, y_id)
         
         y_data_graph = features_particles[mask_particles]
-        print(y_data_graph.shape, unique_list_particles.shape)
+        # print(y_data_graph.shape, unique_list_particles.shape)
         assert len(y_data_graph) == len(unique_list_particles)
     else:
         graph_empty = True
@@ -159,6 +159,7 @@ def check_unique_particles(unique_list_particles, y_id):
 def create_graph_tracking(
     output,
 ):
+    # REMOVE DEPRECATED
     print("creating graph")
     (
         y_data_graph,
@@ -170,12 +171,12 @@ def create_graph_tracking(
     ) = create_inputs_from_table(output)
 
     #! REMOVING LOOPERS TO CHECK IF THE OUTPUTS ARE THE SAME
-    mask_not_loopers, mask_particles = remove_loopers(hit_particle_link, y_data_graph)
-    hit_type_one_hot = hit_type_one_hot[mask_not_loopers]
-    cluster_id = cluster_id[mask_not_loopers]
-    hit_particle_link = hit_particle_link[mask_not_loopers]
-    features_hits = features_hits[mask_not_loopers]
-    y_data_graph = y_data_graph[mask_particles]
+    # mask_not_loopers, mask_particles = remove_loopers(hit_particle_link, y_data_graph)
+    # hit_type_one_hot = hit_type_one_hot[mask_not_loopers]
+    # cluster_id = cluster_id[mask_not_loopers]
+    # hit_particle_link = hit_particle_link[mask_not_loopers]
+    # features_hits = features_hits[mask_not_loopers]
+    # y_data_graph = y_data_graph[mask_particles]
     # cluster_id, unique_list_particles = find_cluster_id(hit_particle_link)
     unique_list_particles = torch.unique(hit_particle_link)
     cluster_id = torch.searchsorted(
@@ -208,7 +209,7 @@ def create_graph_tracking(
         y_data_graph = 0
     if features_hits.shape[0] < 10:
         graph_empty = True
-    print("graph_empty", graph_empty, features_hits.shape[0])
+    # print("graph_empty", graph_empty, features_hits.shape[0])
     return [g, y_data_graph], graph_empty
 
 
@@ -421,7 +422,8 @@ def create_graph_tracking_global(output, get_vtx=False, vector=False, tau=False,
             g.ndata["cellid"] = cellid
             g.ndata["unique_id"] = cellid.view(-1)
             g.ndata["is_overlay"] = is_overlay
-            
+            # g.ndata["weights"] = hit_type_all
+
             # g.ndata["produced_from_secondary_"] = produced_from_secondary_.view(-1)
             # g = create_weights_for_shower_hits(g)
             # uvz = convert_to_conformal_coordinates(pos_xyz)

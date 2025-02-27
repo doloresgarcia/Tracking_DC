@@ -138,7 +138,7 @@ def main():
         trainer = L.Trainer(
             callbacks=callbacks,
             accelerator="gpu",
-            devices=[1,2],
+            devices=args.gpus,
             default_root_dir=args.model_prefix,
             logger=wandb_logger,
             # max_epochs=5,
